@@ -350,5 +350,63 @@ check(notificationPermission(from: .authorized) == .authorized, "map authorized"
 check(notificationPermission(from: .provisional) == .authorized, "provisional counts as authorized")
 check(notificationPermission(from: .notDetermined) == .notDetermined, "map not determined")
 
+let multi = AgentQuestion(
+    id: "m", prompt: "哪些？", header: nil, detail: nil,
+    multiSelect: true, allowCustom: true, intent: nil,
+    options: [
+        AgentQuestionOption(id: "m#0", label: "左", detail: nil, display: nil),
+        AgentQuestionOption(id: "m#1", label: "右", detail: nil, display: nil)
+    ]
+)
+switch buildQuestionAnswers(questions: [multi], selections: ["m": ["右", "左"]], customText: [:]) {
+case .success(let answers):
+    check(answers == [QuestionAnswer(id: "m", selected: ["左", "右"], custom: nil)], "multi select keeps option order")
+case .failure(let error):
+    check(false, "multi select should succeed (\(error.message))")
+}
+switch buildQuestionAnswers(questions: [single], selections: ["q1": ["不存在"]], customText: [:]) {
+case .success:
+    check(false, "unknown option must fail")
+case .failure(let error):
+    check(error.message == "选项已变化，请重新选择", "unknown option message (\(error.message))")
+}
+let tooLong = String(repeating: "啊", count: 2001)
+switch buildQuestionAnswers(questions: [single], selections: [:], customText: ["q1": tooLong]) {
+case .success:
+    check(false, "long custom must fail")
+case .failure(let error):
+    check(error.message == "回答太长", "long custom message (\(error.message))")
+}
+switch buildQuestionAnswers(questions: [], selections: [:], customText: [:]) {
+case .success:
+    check(false, "empty question list must fail")
+case .failure(let error):
+    check(error.message == "没有可回答的问题", "empty question message (\(error.message))")
+}
+
+for name in ["Codex", "Claude Code", "WorkBuddy", "work buddy", "Grok Bot", "Hermes", "my-cli"] {
+    check(!canAnswerExternalApproval(agentName: name), "\(name) stays read-only")
+    check(!externalApprovalReadOnlyReason(agentName: name).isEmpty, "\(name) explains why it is read-only")
+}
+check(externalApprovalReadOnlyReason(agentName: "Codex").contains("app-server"), "codex names the real protocol")
+check(externalApprovalReadOnlyReason(agentName: "Claude Code").contains("PreToolUse"), "claude names the hook")
+check(externalApprovalReadOnlyReason(agentName: "WorkBuddy").contains("trace"), "workbuddy names traces")
+check(externalApprovalReadOnlyReason(agentName: "Grok Bot").contains("不能代答"), "grok stays explicit")
+check(externalApprovalReadOnlyReason(agentName: "Hermes").contains("state.db"), "hermes names state.db")
+check(externalApprovalReadOnlyReason(agentName: "my-cli").contains("不代答"), "generic report stays explicit")
+
+check(railPillWidth(available: 400, visibleCount: 2, totalCount: 2) == CGFloat(340), "pill uses the free width")
+check(railPillWidth(available: 200, visibleCount: 5, totalCount: 6) == CGFloat(160), "pill does not shrink below 160")
+check(railPillWidth(available: 100, visibleCount: 1, totalCount: 1) == CGFloat(160), "narrow wing still floors at 160")
+let frames = predictedRailFrames(agentIDs: ["a", "b"], selectedID: "a", totalCount: 2, availableWidth: 400, barHeight: 30)
+check(frames["icon:a"] == CGRect(x: 0, y: 3.5, width: 23, height: 23), "first icon frame")
+check(frames["pill:a"] == CGRect(x: 29, y: 3.5, width: 340, height: 23), "pill follows its icon")
+check(frames["icon:b"] == CGRect(x: 375, y: 3.5, width: 23, height: 23), "next icon follows the pill")
+check(frames["overflow"] == nil, "no overflow chip for two agents")
+let crowded = predictedRailFrames(agentIDs: ["a", "b", "c", "d", "e", "f"], selectedID: "a", totalCount: 6, availableWidth: 200, barHeight: 30)
+check(crowded["overflow"] != nil, "sixth agent adds an overflow frame")
+check(crowded["icon:f"] == nil, "the sixth icon is not on the rail")
+check(crowded["pill:a"]?.width == CGFloat(160), "crowded pill uses the floor")
+
 print("\(checks - failures)/\(checks) checks passed")
 exit(failures == 0 ? 0 : 1)

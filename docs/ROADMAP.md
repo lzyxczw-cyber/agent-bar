@@ -1,7 +1,7 @@
 # Agent Bar · 交接与下一步
 
-> 状态快照：**v0.3.5**，2026-11-17。当前 `main` 已从公开初始提交 `9186deb` 起步，并合并 PR #1（协议不匹配、问题答复、文档对齐）。v0.3.5 在其上加了 GitHub Release 更新检查和通知授权引导，尚未打 tag。
-> 这一版已经包含 CI、P0/P1/P2、桌面 adapter、拆分后的 Swift 源文件、纯函数与 Node bridge 测试。bundle 版本见 `build.sh` 的 `CFBundleShortVersionString` / `CFBundleVersion`：`0.3.5`。
+> 状态快照：**v0.3.6**，2026-11-17。当前 `main` 已从公开初始提交 `9186deb` 起步，并合并 PR #1（协议不匹配、问题答复、文档对齐）。v0.3.5 加了 GitHub Release 更新检查和通知授权引导。v0.3.6 加了 Hermes 本机读取，并确认外部审批保持只读。都还没打 tag。
+> bundle 版本见 `build.sh` 的 `CFBundleShortVersionString` / `CFBundleVersion`：`0.3.6`。
 > 本机 `~/Documents` 的 File Provider 扩展属性会让本地 `codesign --verify` 失败（CI 不受影响）。
 > 这份文档按当前公开树校对，不沿用已删除仓库里的 v0.4.1-dev 说法。看完这一页就能接手。
 
@@ -46,7 +46,7 @@ ls ~/.dsh/.credentials.yaml   # 需要本机装过 DSH 并登录过（bridge 用
   - 危险命令判定是启发式，不是完整安全边界。
   - 答复结果异步，UI 以审批卡片消失为准；失败看 `audit.log`。
   - 可校验的 `ask_user_question` 已能在面板回答；无法校验的题型仍打开 DSH。
-  - 需要补更系统的单测/集成测试（审批校验、token、审计、race）。布局、用量累加和 adapter 推断的单测仍未做。
+  - 提问答案校验、布局帧、用量增量和 adapter 推断已有确定性单测。控制通道的 token、审计和竞态还没有集成测试。
 
 ### P1 · 小项（已完成 2026-11-17）
 
@@ -65,7 +65,7 @@ ls ~/.dsh/.credentials.yaml   # 需要本机装过 DSH 并登录过（bridge 用
 | 重拍截图 | 公开树的 `docs/` 里没有 `docs/*.png`。带本机桌面的截图不入库；这台环境不能运行 macOS App，所以没有补产品图 |
 | 签名 / 公证 | ✅ 已用 Developer ID 签名并通过 Apple 公证（Accepted + stapled）；签名凭据不入库，流程见 `docs/SIGNING.md` |
 | 用量拆分 / 趋势 / 预算 | ✅ 每个 agent 今日 tokens 显示在面板行；设置里 7 天 sparkline；每日 token 预算超限后右栏变橙并当天提醒 |
-| 外部 agent 一键接入 | ✅ Claude Code hooks 一键安装、Codex wrapper；✅ 本机桌面 adapter 已接 Codex（SQLite）、WorkBuddy（trace）、Grok Bot（persistence），App 自身和 `start.sh` 都会自动启动；支持同一 App 最多 3 个活跃会话；Hermes 仍为演示 |
+| 外部 agent 一键接入 | ✅ Claude Code hooks、Codex wrapper；✅ 桌面 adapter：Codex（SQLite）、WorkBuddy（trace）、Grok Bot（persistence）、Hermes（`state.db`，没有库或进程时仍用演示）。同一 App 最多 3 个活跃会话。外部审批只读 |
 | Homebrew / 发布 | ✅ `Casks/agent-bar.rb` + `v*` tag release workflow，上传 `Agent-Bar-<version>.dmg`；✅ DMG 已公证，cask 校验和已同步 |
 
 ---
@@ -80,15 +80,14 @@ ls ~/.dsh/.credentials.yaml   # 需要本机装过 DSH 并登录过（bridge 用
 - 天气单源 → open-meteo + wttr.in 双源 + 退避重试 + 全链路日志
 - 阴影被窗口裁切 → 改用系统窗口阴影
 - `main.swift` 3675 行单文件 → 拆成 Support / Models / Views / Chrome / AppDelegate + 5 行入口，多文件 `swiftc`
-- 零测试 → `tests/main.swift` 里的 Swift `check`（含版本比较、更新提示和通知引导），外加 `node --test tests/bridge-logic.test.mjs`（提问答案与协议探针）。CI 跑 `./tests/run.sh`
+- 零测试 → `tests/main.swift` 的 Swift `check`，外加 `node --test tests/bridge-logic.test.mjs tests/adapter-logic.test.mjs`。CI 跑 `./tests/run.sh`
 
 **仍欠**：
 
 | 项 | 说明 | 建议 |
 |---|---|---|
-| 测试覆盖仍偏纯函数 | 布局帧计算、用量累加、adapter 状态推断还没单测 | 留给后续版本；布局用固定 CGRect 输入断言输出 |
 | 面板 0.985 不透明度 | 亮背景下有 4/255 的透字 | 可接受；要纯净改 1.0 |
-| Hermes 实时 adapter、外部 agent 可写审批、布局/用量/adapter 单测、新 App 图标 | 不在 v0.3.5 | 后续版本再做 |
+| 新 App 图标 | 确认稿还没替换现有 PNG | 确认稿到达后再换，不要改 `Resources/agents/` 里已经确认的帧 |
 
 已还掉的两项：`status.sh` 用 `pgrep -x AgentBar` / `pgrep -x agentbar` 识别进程，不再只匹配 bundle 路径；`session/list` 探针失败时 `dsh.protocol` 为 `mismatch`，栏上显示「协议不匹配」，不把演示数据当成实时数据。
 
@@ -124,10 +123,17 @@ otool -l agentbar | grep -A3 LC_BUILD_VERSION   # 期望 minos 14.0
 - **自动更新**：只读 GitHub `releases/latest`，和 bundle 短版本比较。有更新时栏上和面板提示，用户自己打开官方 DMG 或发布页。没有 Sparkle，没有新的 Homebrew tap，不会覆盖正在运行的 App。失败只出现在设置里。忽略针对单个版本，稍后是 24 小时。自动检查间隔 6 小时。
 - **通知授权引导**：未决定时面板里一张卡片，用户点了才请求系统授权；已拒绝时引导到系统设置。两种卡片都可以关掉，之后不再反复出现。设置页保留入口。未授权时继续只播放提示音。
 
+## 4c. v0.3.6 已完成
+
+- **外部审批**：Codex、Claude Code、WorkBuddy、Grok Bot、Hermes 和任意心跳上报都保持只读，面板说明原因，不放一个不会生效的「允许」按钮。Codex 的真实协议是当前 app-server 连接上的 `item/commandExecution/requestApproval`；Claude 的决定只能由当次 `PreToolUse` hook 输出。这两边 Agent Bar 都不是那个应答方。WorkBuddy trace、Grok blob、Hermes `state.db` 都没有带 token 和 pending id 的写接口。
+- **Hermes**：`hermes` 进程或 Hermes.app 在跑，并且 `HERMES_HOME/state.db`（默认 `~/.hermes/state.db`）能只读打开时，按最近 90 秒的消息推断最多 3 个会话。库不存在、进程不在、或表结构对不上时不编造数据，演示模式仍用原来的 Hermes 行。不写数据库，不把累计 token 显示成今日用量。
+- **测试**：提问答案的多选顺序、未知选项、超长自定义；`railPillWidth` / `predictedRailFrames`；`applyUsageTick` 的首次基线、增量和跨日；Hermes 会话推断和每个 App 最多 3 个子会话。
+
 ## 5. 最近完成（时间线）
 
 | 日期 | 内容 |
 |---|---|
+| 11-17 | **v0.3.6**：Hermes 只读 `state.db`；外部审批保持只读并写明原因；布局、用量、提问和 adapter 推断测试 |
 | 11-17 | **v0.3.5**：GitHub Release 更新检查（不自动安装）+ 通知授权引导 |
 | 11-17 | **P0 审批双向落地**：本机控制通道 + token + 审计 + 400ms 长按 + 危险命令二次确认；真实允许/拒绝验收通过 |
 | 11-17 | **P1 完成**：天气城市设置、多显示器选择、全屏 Space 实测、+N 点击、网速空闲淡出 |

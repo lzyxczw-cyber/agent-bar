@@ -338,6 +338,71 @@ func railFrameReader(_ key: String) -> some View {
     }
 }
 
+/// Width of the expanded capsule. Mirrors the left-wing HStack: one avatar per
+/// visible agent, a gap, and the overflow chip when the bar is hiding agents.
+/// Hit testing still reads the frames SwiftUI actually publishes.
+func railPillWidth(available: CGFloat, visibleCount: Int, totalCount: Int) -> CGFloat {
+    let count = CGFloat(max(0, visibleCount))
+    let overflow: CGFloat = totalCount > visibleCount ? railOverflowWidth + railSpacing : 0
+    return max(160, available - count * railAvatarSize - count * railSpacing - 2 - overflow)
+}
+
+/// Predicted rail frames in the HStack's local coordinates, after the pill has
+/// finished expanding. The bar does not hit-test with this; the tests pin the
+/// same spacing the view uses.
+func predictedRailFrames(
+    agentIDs: [String],
+    selectedID: String?,
+    totalCount: Int,
+    availableWidth: CGFloat,
+    barHeight: CGFloat
+) -> [String: CGRect] {
+    let visible = Array(agentIDs.prefix(5))
+    let pill = railPillWidth(available: availableWidth, visibleCount: visible.count, totalCount: totalCount)
+    let y = max(0, (barHeight - railAvatarSize) / 2)
+    var x: CGFloat = 0
+    var frames: [String: CGRect] = [:]
+    for id in visible {
+        frames["icon:\(id)"] = CGRect(x: x, y: y, width: railAvatarSize, height: railAvatarSize)
+        x += railAvatarSize + railSpacing
+        if id == selectedID {
+            frames["pill:\(id)"] = CGRect(x: x, y: y, width: pill, height: railAvatarSize)
+            x += pill + railSpacing
+        }
+    }
+    if totalCount > visible.count {
+        frames["overflow"] = CGRect(x: x, y: y, width: railOverflowWidth, height: railAvatarSize)
+    }
+    return frames
+}
+
+/// External agents stay read-only. None of the local adapters expose a control
+/// channel that can answer an already-pending approval with a token and id.
+func externalApprovalReadOnlyReason(agentName: String) -> String {
+    let name = agentName.lowercased()
+    if name.contains("codex") || name.contains("chatgpt") || name.contains("openai") {
+        return "Codex 的审批要在当前 app-server 连接上回答 item/commandExecution/requestApproval。这里只读本地记录，没有那条连接，不能代答。"
+    }
+    if name.contains("claude") {
+        return "Claude Code 的允许或拒绝只能由当次 PreToolUse hook 自己输出。现有 hook 只上报状态，Agent Bar 不阻塞 hook，也不另发 prompt。"
+    }
+    if name.contains("workbuddy") || name.contains("work buddy") {
+        return "WorkBuddy 只有本机 trace 可以读，没有带 token 和 pending id 的审批接口。"
+    }
+    if name.contains("grok") {
+        return "Grok Bot 的本地记录不是控制通道。没有可校验的审批 id，不能代答。"
+    }
+    if name.contains("hermes") {
+        return "Hermes 的 state.db 只反映会话。没有带 token 和 pending id 的审批接口。"
+    }
+    return "这份外部上报没有可校验的控制通道（token + 仍在 pending 的 id）。Agent Bar 只展示，不代答。"
+}
+
+func canAnswerExternalApproval(agentName: String) -> Bool {
+    _ = agentName
+    return false
+}
+
 // MARK: - GitHub Release update check
 
 struct ReleaseVersion: Equatable, Comparable {

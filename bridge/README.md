@@ -543,7 +543,7 @@ the reporter CLI).
 | `tokens` | number | optional token counter |
 | `startedAt` | number (ms) | first report time; preserved by the CLI |
 | `updatedAt` | number (ms) | heartbeat time; defaults to the file mtime |
-| `approvals[]` | array | normalized to `{id, kind:"approval", tool, command, reason, createdAt}`; **display-only** — the bridge's control channel only answers DSH approval events, not external reports |
+| `approvals[]` | array | normalized to `{id, kind:"approval", tool, command, reason, createdAt}`; **display-only** — the bridge's control channel only answers DSH approval events, not external reports. Codex, Claude Code, WorkBuddy, Grok Bot, and Hermes have no safe local write path from this process (token + still-pending id), so the panel does not offer Allow |
 | `process[]` | array | last 10 steps kept as `{kind, label, detail, at}` |
 | `appBundleID` | string | optional macOS bundle id; the notch uses it for "open app" / double-click |
 | `sessions[]` | array | optional child sessions, normalized to `{id, project, tool, detail, status, startedAt, updatedAt, tokens, thought}`; the notch shows them under the parent row |

@@ -6,7 +6,7 @@
 
 ## 安装
 
-这棵源码的 bundle 版本是 **v0.3.5**。已经打过 tag 的安装包仍是 [GitHub Release v0.3.4](https://github.com/lzyxczw-cyber/agent-bar/releases/tag/v0.3.4)；`v0.3.5` 的 DMG 要等下次打 `v*` tag 才会出现在 Releases 里。应用内更新检查看的是这个 Release，不会提前假设还没发布的包。
+这棵源码的 bundle 版本是 **v0.3.6**。已经打过 tag 的安装包仍是 [GitHub Release v0.3.4](https://github.com/lzyxczw-cyber/agent-bar/releases/tag/v0.3.4)；更新的 DMG 要等下次打 `v*` tag 才会出现在 Releases 里。应用内更新检查看的是这个 Release，不会提前假设还没发布的包。
 
 - DMG：上面的 v0.3.4 Release（当前已发布的安装包）
 - Homebrew：仓库里的 cask 没有单独的 tap，它直接下载已发布 Release 里的 DMG。在克隆下来的 `agent-bar` 目录执行：
@@ -108,7 +108,7 @@ brew install --cask ./Casks/agent-bar.rb
   - **天气位置**（输入城市名搜索，选择候选后立即刷新；常用城市作为离线快捷入口）
   - **每日 token 预算**（超过后右栏用量变橙并当天提醒一次；0 = 关闭）
   - **用量趋势**（近 7 天 sparkline）
-  - **本机 App 接入**（Codex / WorkBuddy / Grok Bot 在线状态与运行数）
+  - **本机 App 接入**（Codex / WorkBuddy / Grok Bot / Hermes 在线状态与运行数）
   - **显示屏幕**（主屏或任意外接屏，切换后顶部条和面板跟随）
   - 打开 DSH
   - **退出 Agent Bar**
@@ -146,7 +146,7 @@ node tools/agentbar-install-adapter.mjs uninstall-claude
 
 - Claude Code：备份 `~/.claude/settings.json` 后合并 hooks，不覆盖已有 hooks；重启 Claude Code 生效。
 - Codex：生成 `~/Library/Application Support/AgentBar/adapters/codex-agentbar`，按输出提示加 alias。
-- 两者都只是状态上报；审批仍需在各 CLI 内处理（外部 agent 审批只读）。
+- 两者都只是状态上报。审批仍在各自的工具里处理：面板不会为它们显示「允许」。
 
 ### 外部 agent 接入（Codex / Claude Code / 任意 CLI）
 
@@ -164,7 +164,7 @@ node tools/agentbar-report.mjs --id codex --remove
 
 bridge 每 tick 扫描一次；120s 无心跳隐藏，文件删除即移除。完整 schema、Codex wrapper 和 Claude Code hooks 示例见 [bridge/README.md](bridge/README.md) §11。
 
-### 本机桌面 App adapter（Codex / Grok Bot / WorkBuddy）
+### 本机桌面 App adapter（Codex / Grok Bot / WorkBuddy / Hermes）
 
 直接双击 App 或走 `start.sh` 都会自动启动 `tools/agentbar-app-adapters.mjs`（脚本打包在 App 的 Resources 里），只读取本机 App 的本地状态，不修改 App。
 
@@ -175,6 +175,7 @@ bridge 每 tick 扫描一次；120s 无心跳隐藏，文件删除即移除。�
 | **Codex**（ChatGPT.app） | `~/.codex/thread_history_1.sqlite` | 进行中的 turn、当前 Bash 命令 / 编辑文件、cwd、reasoning 摘要 |
 | **WorkBuddy** | `~/.workbuddy/traces/<worker>/trace-*.jsonl` | 运行中的 trace、当前 span（generation/Bash/…）；多条 trace 收成一个父行 |
 | **Grok Bot** | `.../Grok Bot/sand-client-persistence/*.blob` | 流式/未返回的请求、最近对话 agent、最后一条用户消息 |
+| **Hermes** | `$HERMES_HOME/state.db`，默认 `~/.hermes/state.db` | 进程在跑且最近 90 秒有消息的会话；没有数据库或进程时不编造，仍走演示数据 |
 
 ```bash
 node tools/agentbar-app-adapters.mjs --once   # 打印一次解析结果
@@ -182,7 +183,7 @@ node tools/agentbar-app-adapters.mjs          # 前台 watch（start.sh 会后�
 tail -f /tmp/agentbar-adapters.log
 ```
 
-限制：每个 App 最多显示 3 个活跃会话，没有官方 API，状态是从本地数据推断的；外部 App 的审批仍是只读，子会话只能看、不能单独跳转到 App 内的任务。
+限制：每个 App 最多显示 3 个活跃会话，没有官方 API，状态是从本地数据推断的。Hermes 只读 `sessions` / `messages` 里白名单列，不写 `state.db`，也不把累计 token 当成今日用量。命名 profile 只有在 `HERMES_HOME` 指向该目录时才会被读到。外部 App 的审批仍是只读，子会话只能看、不能单独跳转到 App 内的任务。
 App 退出后 adapter 会自动移除对应图标。
 
 ### 目前各 App 的支持程度（2026-11-17）
@@ -190,15 +191,14 @@ App 退出后 adapter 会自动移除对应图标。
 | App / Agent | 实时状态 | 思考 / 过程 | 审批 |
 |---|---|---|---|
 | **DeepSeek Harness（DSH）** | ✅ 原生 bridge（非官方） | ✅ | ✅ 审批双向；可校验的提问可在面板回答 |
-| **Codex**（ChatGPT.app / CLI） | ✅ 桌面 App adapter（本地 SQLite）；CLI 另有 wrapper | ✅ 命令 / 文件 / reasoning | ❌ 只读，请在 Codex 内处理 |
-| **Claude Code** | ✅ hooks 一键安装 | ⚠️ 可上报 | ❌ 只读，请在 Claude Code 内处理 |
-| **WorkBuddy** | ✅ 本机 trace adapter | ✅ 当前 span（无自然语言 thought） | ❌ 只读 |
-| **Grok Bot** | ✅ 本机 persistence adapter | ⚠️ 最近对话，无 reasoning 细分 | ❌ 只读 |
-| **Hermes** | ⚠️ 演示数据/像素图标 | — | — |
-| **任意 CLI** | ⚠️ `tools/agentbar-report.mjs` 心跳 | ⚠️ 可上报 | ❌ 只读 |
+| **Codex**（ChatGPT.app / CLI） | ✅ 桌面 App adapter（本地 SQLite）；CLI 另有 wrapper | ✅ 命令 / 文件 / reasoning | ❌ 只读。审批协议是当前 `codex app-server` 连接上的 `item/commandExecution/requestApproval`，Agent Bar 不是那条连接 |
+| **Claude Code** | ✅ hooks 一键安装 | ⚠️ 可上报 | ❌ 只读。允许/拒绝只能由当次 `PreToolUse` hook 输出；现有 hook 只上报状态，不阻塞、不另发 prompt |
+| **WorkBuddy** | ✅ 本机 trace adapter | ✅ 当前 span（无自然语言 thought） | ❌ 只读。trace 不是带 token 和 pending id 的控制接口 |
+| **Grok Bot** | ✅ 本机 persistence adapter | ⚠️ 最近对话，无 reasoning 细分 | ❌ 只读。本地 blob 不是控制通道 |
+| **Hermes** | ✅ 本机 `state.db`（进程在跑且库可读时）；否则仍是演示 | ⚠️ 最近一条消息，推断状态 | ❌ 只读。`state.db` 没有审批回调 |
+| **任意 CLI** | ⚠️ `tools/agentbar-report.mjs` 心跳 | ⚠️ 可上报 | ❌ 只读。上报里的 `approvals` 没有可校验的控制通道 |
 
-外部 agent 的 `approvals` 字段目前只展示，不能在刘海里答复；双向审批只对 DSH 原生事件生效。
-外部 agent 想支持审批，需要各自的 adapter 回调（或者让工具自己写一个可被 Agent Bar 调用的控制接口）。
+这些只读项不会显示「允许」按钮。面板写明原因。双向审批仍然只对 DSH 里已经 pending、并能校验 token 的事件生效。没有为某个 App 发明一条写命令。
 
 ## App 运行
 
@@ -317,11 +317,8 @@ agent-bar/
 
 ## 接下来
 
-双向审批、Claude Code / Codex 一键接入、本机桌面 adapter、多显示器、用量趋势和签名公证都已经在 v0.3.4 里。v0.3.5 加上了 GitHub Release 更新检查和通知授权引导。还没做、留给后续版本的是：
+v0.3.4 有双向审批、一键接入、桌面 adapter、多显示器、用量趋势和签名公证。v0.3.5 加上 GitHub Release 更新检查和通知授权引导。v0.3.6 加上 Hermes 的本机 `state.db` 读取、把外部审批明确保持只读，并补了布局、用量累加、提问校验和 adapter 推断的测试。还没做的是：
 
-- 外部 agent 可在栏里作答的审批
-- Hermes 实时 adapter
-- 布局、用量累加、adapter 推断的更多单测
 - 新的 App 图标
 
 ## 许可与权利声明

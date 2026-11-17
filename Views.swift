@@ -933,10 +933,8 @@ struct BarView: View {
             let available = max(0, geo.size.width)
             let agents = railAgents
             let selected = selectedAgent
-            let count = CGFloat(agents.count)
             // Capsule uses all remaining left-wing length, after the fixed icon row leaves room for one icon per agent.
-            let overflowWidth = store.agents.count > agents.count ? railOverflowWidth + railSpacing : 0
-            let pillWidth = max(160, available - count * railAvatarSize - count * railSpacing - 2 - overflowWidth)
+            let pillWidth = railPillWidth(available: available, visibleCount: agents.count, totalCount: store.agents.count)
 
             HStack(spacing: railSpacing) {
                 ForEach(agents, id: \.id) { agent in
@@ -2132,9 +2130,10 @@ struct PanelView: View {
                     VStack(alignment: .leading, spacing: 8) {
                         HStack(spacing: 8) {
                             if agent.isExternal {
-                                Text("外部 agent 审批 · 请在对应工具内处理")
+                                Text(externalApprovalReadOnlyReason(agent.name))
                                     .font(.system(size: 10.5, weight: .medium))
-                                    .foregroundStyle(Color.white.opacity(0.55))
+                                    .foregroundStyle(Color.white.opacity(0.62))
+                                    .fixedSize(horizontal: false, vertical: true)
                             } else if agent.approvalId != nil {
                                 let dangerous = isDangerousApproval(agent)
                                 HoldToConfirmButton(
@@ -2165,7 +2164,7 @@ struct PanelView: View {
                                     .foregroundStyle(Color(red: 1.0, green: 0.80, blue: 0.38).opacity(0.9))
                             }
                             Spacer()
-                            Text(agent.isExternal ? "外部 agent · 只读" : (store.approvalNotice ?? "长按 0.4 秒确认 · 危险命令二次确认"))
+                            Text(agent.isExternal ? "只读 · 没有可代答的控制通道" : (store.approvalNotice ?? "长按 0.4 秒确认 · 危险命令二次确认"))
                                 .font(.system(size: 9.5))
                                 .foregroundStyle(Color.white.opacity(0.32))
                                 .lineLimit(1)
@@ -2195,7 +2194,7 @@ struct PanelView: View {
                             }
                             .buttonStyle(.plain)
                             Spacer()
-                            Text(agent.isExternal ? "外部 agent 只读展示" : "审计：bridge/audit.log")
+                            Text(agent.isExternal ? "不会发送允许或拒绝" : "审计：bridge/audit.log")
                                 .font(.system(size: 9))
                                 .foregroundStyle(Color.white.opacity(0.22))
                         }
@@ -2281,7 +2280,7 @@ struct PanelView: View {
         .frame(height: 42)
     }
 
-    private let localAdapterNames = ["Codex", "WorkBuddy", "Grok Bot"]
+    private let localAdapterNames = ["Codex", "WorkBuddy", "Grok Bot", "Hermes"]
 
     private func adapterBadge(_ name: String) -> some View {
         let rows = store.agents.filter { $0.name == name }
@@ -2502,7 +2501,7 @@ struct PanelView: View {
                         .frame(width: 120, height: 26)
                 }
 
-                settingsRow(title: "本机 App 接入", subtitle: "Codex / WorkBuddy / Grok Bot（每个 App 最多 3 个会话）") {
+                settingsRow(title: "本机 App 接入", subtitle: "Codex / WorkBuddy / Grok Bot / Hermes（每个 App 最多 3 个会话）") {
                     HStack(spacing: 5) {
                         ForEach(localAdapterNames, id: \.self) { name in
                             adapterBadge(name)

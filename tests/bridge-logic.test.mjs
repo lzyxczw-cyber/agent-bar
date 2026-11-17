@@ -85,6 +85,15 @@ test('unknown intent, duplicate labels, and incomplete groups stay unanswered', 
   assert.equal (conflict.reason, 'single-select');
 });
 
+test('custom text over 2000 characters and an unknown label are rejected', () => {
+  const plain = normalizeUserQuestions ({
+    questions: [{ id: 'q1', question: '?', multiSelect: true, options: [{ label: 'A' }, { label: 'B' }] }]
+  });
+  assert.equal (buildQuestionResult (plain.questions, [{ id: 'q1', selected: [], custom: 'x'.repeat (2001) }]).reason, 'custom-too-long');
+  assert.equal (buildQuestionResult (plain.questions, [{ id: 'q1', selected: ['C'] }]).reason, 'unknown-option');
+  assert.equal (buildQuestionResult (plain.questions, [{ id: 'q1', selected: ['B', 'A'] }]).value.answers[0].selected.join (','), 'A,B');
+});
+
 test('cancel outcome is the DSH UserQuestionError, not a selected label', () => {
   assert.equal (QUESTION_CANCELLED_OUTCOME.kind, 'rejected');
   assert.equal (QUESTION_CANCELLED_OUTCOME.error.code, 'ASK_CANCELLED');
