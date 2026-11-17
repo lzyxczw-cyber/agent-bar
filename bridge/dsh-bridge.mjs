@@ -38,6 +38,7 @@ import { DshRpc, DshRpcError } from './lib/rpc.mjs';
 import { ThoughtTranslator } from './lib/translate.mjs';
 import { classifyDshProbe } from './lib/protocol.mjs';
 import { buildQuestionResult, normalizeUserQuestions, QUESTION_CANCELLED_OUTCOME } from './lib/questions.mjs';
+import { applyUsageTick, usageTotal } from './lib/usage.mjs';
 import { openMux, openEventStream } from './vendor/ws-mux.mjs';
 
 const BRIDGE_DIR = path.dirname (fileURLToPath (import.meta.url));
@@ -171,11 +172,6 @@ function pickLocalized (value) {
     if (first) return first;
   }
   return null;
-}
-
-function usageTotal (usage) {
-  if (!usage || typeof usage !== 'object') return 0;
-  return (Number (usage.uncachedInputTokens) || 0) + (Number (usage.outputTokens) || 0);
 }
 
 function textField (value, max) {
@@ -800,77 +796,23 @@ class DshBridge {
    */
   dailyUsage () {
     const now = new Date ();
-    const dayKey = [now.getFullYear (), String (now.getMonth () + 1).padStart (2, '0'), String (now.getDate ()).padStart (2, '0')].join ('-');
-    const dayStart = new Date (now.getFullYear (), now.getMonth (), now.getDate ()).getTime ();
-
-    if (!this.usageState || this.usageState.day !== dayKey) {
-      const previous = this.usageState && this.usageState.day
-        ? { day: this.usageState.day, tokens: Number (this.usageState.tokensToday) || 0 }
-        : null;
-      const history = Array.isArray (this.usageState && this.usageState.history)
-        ? this.usageState.history.slice (-13)
-        : [];
-      if (previous && previous.tokens > 0) history.push (previous);
-      this.usageState = { day: dayKey, sessions: {}, bySession: {}, tokensToday: 0, history, since: Date.now () };
-      this.usageDirty = true;
-    }
-    if (!this.usageState.bySession || typeof this.usageState.bySession !== 'object') {
-      this.usageState.bySession = {};
-    }
-    if (!Array.isArray (this.usageState.history)) this.usageState.history = [];
-    if (!this.usageState.since) {
-      this.usageState.since = Date.now ();
-      this.usageDirty = true;
-    }
-
-    const baselines = this.usageState.sessions;
-    if (typeof this.usageState.tokensToday !== 'number') {
-      this.usageState.tokensToday = 0;
-      this.usageDirty = true;
-    }
-    let gained = 0;
-    let sessionsToday = 0;
-    const live = new Set ();
+    const sessions = [];
     for (const session of this.sessions.values ()) {
-      live.add (session.id);
-      const total = usageTotal (session.tokenUsage);
-      const baseline = baselines[session.id];
-      if (typeof baseline === 'number') {
-        const delta = total - baseline;
-        if (delta > 0) {
-          gained += delta;
-          this.usageState.bySession[session.id] = (this.usageState.bySession[session.id] || 0) + delta;
-          this.usageDirty = true;
-        }
-      } else {
-        // First sighting today: count from here on instead of assuming the whole
-        // session total happened today (that is what inflated the number before).
-        this.usageDirty = true;
-      }
-      baselines[session.id] = total;
-      if ((session.updatedAt || 0) >= dayStart) sessionsToday++;
+      sessions.push ({ id: session.id, tokenUsage: session.tokenUsage, updatedAt: session.updatedAt });
     }
-    // Accumulate into the day's running total: each tick only sees the increment
-    // since the previous tick, so a per-call local would reset the meter.
-    if (gained > 0) {
-      this.usageState.tokensToday += gained;
-      this.usageDirty = true;
-    }
-    for (const id of Object.keys (baselines)) {
-      if (!live.has (id)) {
-        delete baselines[id];
-        this.usageDirty = true;
-      }
-    }
-
+    // First sighting of a session only stores a baseline. Later ticks add the
+    // increase, so a session that was already running is not counted in full.
+    const tick = applyUsageTick (this.usageState, sessions, now);
+    this.usageState = tick.state;
+    if (tick.dirty) this.usageDirty = true;
     if (Date.now () - this.usageSavedAt > 30000) this.saveUsageState ();
     return {
-      tokensToday: this.usageState.tokensToday,
-      sessionsToday,
-      since: this.usageState.since,
-      day: dayKey,
-      history: this.usageState.history,
-      byAgent: this.usageState.bySession
+      tokensToday: tick.state.tokensToday,
+      sessionsToday: tick.sessionsToday,
+      since: tick.state.since,
+      day: tick.day,
+      history: tick.state.history,
+      byAgent: tick.state.bySession
     };
   }
 

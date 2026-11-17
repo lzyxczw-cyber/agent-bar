@@ -9,6 +9,7 @@
  *   Codex (ChatGPT.app)  ~/.codex/thread_history_1.sqlite
  *   WorkBuddy            ~/.workbuddy/traces/<worker>/trace-*.jsonl
  *   Grok Bot             .../Grok Bot/sand-client-persistence/<hash>.blob
+ *   Hermes               $HERMES_HOME/state.db (default ~/.hermes/state.db)
  *
  * Writes only the generic external-agent report files under
  * ~/Library/Application Support/AgentBar/agents/. Never writes app state.
@@ -18,6 +19,15 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import {
+  aggregateApp,
+  hermesIdleReport,
+  hermesMessageSelect,
+  hermesSessionSelect,
+  inferHermesRunning,
+  latestHermesMessages,
+  normalizeHermesSession
+} from './lib/adapter-logic.mjs';
 
 const HOME = os.homedir();
 const APP_SUPPORT = path.join(HOME, 'Library', 'Application Support', 'AgentBar');
@@ -94,61 +104,6 @@ function writeReport(report) {
   fs.renameSync(temporary, file);
 }
 
-/**
- * Fold per-session reports from one desktop app into one parent report.
- * The bar shows one icon per app; the panel expands the children.
- */
-function aggregateApp(adapter, reports) {
-  const active = reports
-    .filter((report) => report.status === 'running' && report.id !== adapter.group)
-    .sort((a, b) => (b.startedAt || 0) - (a.startedAt || 0));
-  const idle = reports.find((report) => report.id === adapter.group) || reports[0] || null;
-  if (active.length === 0) {
-    if (!idle) return null;
-    return {
-      id: adapter.group,
-      name: adapter.name,
-      status: 'done',
-      project: idle.project || adapter.name,
-      tool: idle.tool || '空闲',
-      detail: idle.detail || null,
-      thought: idle.thought || null,
-      startedAt: idle.startedAt || Date.now(),
-      tokens: idle.tokens || null,
-      appBundleID: adapter.bundleID,
-      sessions: []
-    };
-  }
-  const latest = active[0];
-  const sessions = active.slice(0, 3).map((report) => ({
-    id: report.id,
-    project: report.project || adapter.name,
-    tool: report.tool || null,
-    detail: report.detail || null,
-    status: report.status,
-    startedAt: report.startedAt || Date.now(),
-    updatedAt: report.updatedAt || Date.now(),
-    thought: report.thought || null,
-    tokens: report.tokens || null
-  }));
-  const startedAt = Math.min(...active.map((report) => report.startedAt || Date.now()));
-  const tokens = active.reduce((sum, report) => sum + (Number(report.tokens) || 0), 0);
-  return {
-    id: adapter.group,
-    name: adapter.name,
-    status: 'running',
-    project: latest.project || adapter.name,
-    tool: latest.tool || '运行中',
-    detail: latest.detail || null,
-    thought: latest.thought || null,
-    startedAt,
-    tokens: tokens || null,
-    appBundleID: adapter.bundleID,
-    sessions,
-    process: latest.process || []
-  };
-}
-
 function removeReport(id) {
   try { fs.unlinkSync(path.join(AGENTS_DIR, id + '.json')); } catch {}
 }
@@ -168,9 +123,9 @@ function isOurReport(file) {
     const data = JSON.parse(fs.readFileSync(file, 'utf8'));
     if (!data || typeof data.id !== 'string') return false;
     if (data.source === SOURCE) return true;
-    return data.id === 'codex' || data.id === 'grok' || data.id === 'workbuddy' ||
+    return data.id === 'codex' || data.id === 'grok' || data.id === 'workbuddy' || data.id === 'hermes' ||
       data.id.startsWith('codex-') || data.id.startsWith('grok-') ||
-      data.id.startsWith('workbuddy-');
+      data.id.startsWith('workbuddy-') || data.id.startsWith('hermes-');
   } catch {
     return false;
   }
@@ -512,13 +467,49 @@ function grokReports() {
   return idle ? [idle] : [];
 }
 
+// MARK: Hermes
+
+const HERMES_DB_NAME = 'state.db';
+
+function hermesProcessRunning() {
+  if (pgrep('/Applications/Hermes.app/Contents/MacOS/')) return true;
+  const exact = spawnSync('/usr/bin/pgrep', ['-x', 'hermes'], { encoding: 'utf8' });
+  if (exact.status === 0) return true;
+  const gateway = spawnSync('/usr/bin/pgrep', ['-f', 'hermes gateway'], { encoding: 'utf8' });
+  return gateway.status === 0;
+}
+
+function hermesHome() {
+  return process.env.HERMES_HOME || path.join(HOME, '.hermes');
+}
+
+function hermesReports() {
+  if (!hermesProcessRunning()) return [];
+  const db = path.join(hermesHome(), HERMES_DB_NAME);
+  if (!fs.existsSync(db)) return [];
+  const sessionInfo = sqliteJSON(db, 'PRAGMA table_info(sessions)');
+  const sessionSQL = hermesSessionSelect(sessionInfo.map((row) => row && row.name).filter((name) => typeof name === 'string'));
+  if (!sessionSQL) return [];
+  const sessionRows = sqliteJSON(db, sessionSQL).map(normalizeHermesSession).filter(Boolean);
+  const messageInfo = sqliteJSON(db, 'PRAGMA table_info(messages)');
+  const messageSQL = hermesMessageSelect(
+    messageInfo.map((row) => row && row.name).filter((name) => typeof name === 'string'),
+    sessionRows.map((session) => session.id)
+  );
+  const messages = messageSQL ? latestHermesMessages(sqliteJSON(db, messageSQL)) : {};
+  const now = Date.now();
+  const running = inferHermesRunning(sessionRows, messages, now, 3);
+  return running.length > 0 ? running : [hermesIdleReport(sessionRows, now)];
+}
+
 // MARK: main
 
 function tick() {
   const adapters = [
     { group: 'codex', name: 'Codex', bundleID: 'com.openai.codex', reports: codexReports },
     { group: 'workbuddy', name: 'WorkBuddy', bundleID: 'com.tencent.workbuddy.mac', reports: workbuddyReports },
-    { group: 'grok', name: 'Grok Bot', bundleID: 'com.anysphere.sand', reports: grokReports }
+    { group: 'grok', name: 'Grok Bot', bundleID: 'com.anysphere.sand', reports: grokReports },
+    { group: 'hermes', name: 'Hermes', bundleID: null, reports: hermesReports }
   ];
   const all = [];
   for (const adapter of adapters) {
