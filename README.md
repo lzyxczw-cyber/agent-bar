@@ -6,9 +6,9 @@
 
 ## 安装
 
-当前公开版本是 **v0.3.3**。
+当前公开版本是 **v0.3.4**。
 
-- DMG：[GitHub Release v0.3.3](https://github.com/lzyxczw-cyber/agent-bar/releases/tag/v0.3.3)
+- DMG：[GitHub Release v0.3.4](https://github.com/lzyxczw-cyber/agent-bar/releases/tag/v0.3.4)
 - Homebrew：仓库里的 cask 没有单独的 tap，它直接下载上面这个 Release 里的 DMG。在克隆下来的 `agent-bar` 目录执行：
 
 ```bash
@@ -234,7 +234,7 @@ cd agent-bar
 ## 打包与签名
 
 ```bash
-./package.sh                                  # ad-hoc DMG: Agent-Bar-0.3.3.dmg
+./package.sh                                  # ad-hoc DMG: Agent-Bar-0.3.4.dmg
 CODESIGN_IDENTITY="Developer ID Application: ..." ./package.sh   # Developer ID 签名
 # 推荐：App Store Connect API Key（本机已配置）
 CODESIGN_IDENTITY="..." CODESIGN_KEYCHAIN="$HOME/Library/Keychains/agentbar-signing.keychain-db" \
@@ -247,11 +247,11 @@ NOTARIZE=1 NOTARY_PROFILE="agentbar-notary" ./package.sh
 
 - `package.sh` 会在 `/tmp` 里的 staging 目录重新签名再打 DMG，绕开 `~/Documents` 的 File Provider
   扩展属性问题，DMG 内的 App 签名是有效的。
-- **Developer ID / 公证（已完成）**：`Agent-Bar-0.3.3.dmg` 已用
+- **Developer ID / 公证（已完成）**：`Agent-Bar-0.3.4.dmg` 已用
   已用 Developer ID 签名并公证（Accepted + stapled），
   Gatekeeper 显示 `source=Notarized Developer ID`。签名/公证流水线见
   [docs/SIGNING.md](docs/SIGNING.md)。
-- **Homebrew**：`Casks/agent-bar.rb` 已按 0.3.3 生成；`v*` tag 的 release workflow 会构建 DMG、
+- **Homebrew**：`Casks/agent-bar.rb` 已按 0.3.4 生成；`v*` tag 的 release workflow 会构建 DMG、
   用 `tools/update-cask.sh` 自动回写 cask 校验和并上传 release。公开仓库后：
   ```bash
   brew install --cask ./Casks/agent-bar.rb
@@ -301,7 +301,7 @@ agent-bar/
 
 ## 接下来
 
-双向审批、Claude Code / Codex 一键接入、本机桌面 adapter、多显示器、用量趋势和签名公证都已经在 v0.3.3 里。还没做、留给后续版本的是：
+双向审批、Claude Code / Codex 一键接入、本机桌面 adapter、多显示器、用量趋势和签名公证都已经在 v0.3.4 里。还没做、留给后续版本的是：
 
 - 自动更新
 - 外部 agent 可在栏里作答的审批

@@ -1,7 +1,7 @@
 # Agent Bar · 交接与下一步
 
-> 状态快照：**v0.3.3** 公开版，2026-11-17。当前 `main` 从公开提交 `9186deb`（Initial public release: Agent Bar v0.3.3）起步。
-> 这一版已经包含 CI、P0/P1/P2、桌面 adapter、拆分后的 Swift 源文件和纯函数测试。bundle 版本见 `build.sh` 的 `CFBundleShortVersionString`：`0.3.3`。
+> 状态快照：**v0.3.4** 公开版，2026-11-17。当前 `main` 已从公开初始提交 `9186deb` 起步，并合并 PR #1（协议不匹配、问题答复、文档对齐）。
+> 这一版已经包含 CI、P0/P1/P2、桌面 adapter、拆分后的 Swift 源文件、纯函数与 Node bridge 测试。bundle 版本见 `build.sh` 的 `CFBundleShortVersionString`：`0.3.4`。
 > 本机 `~/Documents` 的 File Provider 扩展属性会让本地 `codesign --verify` 失败（CI 不受影响）。
 > 这份文档按当前公开树校对，不沿用已删除仓库里的 v0.4.1-dev 说法。看完这一页就能接手。
 
