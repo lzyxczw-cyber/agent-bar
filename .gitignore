@@ -1,0 +1,27 @@
+# build artifacts
+agentbar
+Agent Bar.app/
+AgentBar.app/
+*.dmg
+*.dmg.sha256
+agentbar-package-*
+*.app/
+tools/key
+tools/mouse
+
+# runtime / logs
+bridge/status.json
+bridge/status.sock
+bridge/control/
+bridge/audit.log
+bridge/usage-state.json
+*.log
+*.pid
+
+# dev screenshots (docs/ holds the curated images)
+shots/
+
+# misc
+.DS_Store
+__pycache__/
+*.swp

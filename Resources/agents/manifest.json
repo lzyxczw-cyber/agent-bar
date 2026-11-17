@@ -1,0 +1,158 @@
+{
+  "version": 1,
+  "canvas": 128,
+  "background": "transparent",
+  "notes": "128×128 idle 4 frames, drawn on a 32 logical grid (4×4 solid px). Confirm with the product owner before shipping.",
+  "agents": [
+    {
+      "id": "codex",
+      "displayName": "Codex",
+      "nameMatchers": [
+        "codex",
+        "chatgpt",
+        "openai"
+      ],
+      "sets": {
+        "idle": {
+          "frames": 4,
+          "suggestedIntervalSec": 0.70
+        }
+      }
+    },
+    {
+      "id": "grok",
+      "displayName": "Grok",
+      "nameMatchers": [
+        "grok"
+      ],
+      "sets": {
+        "idle": {
+          "frames": 4,
+          "suggestedIntervalSec": 0.70
+        }
+      }
+    },
+    {
+      "id": "workbuddy",
+      "displayName": "WorkBuddy",
+      "nameMatchers": [
+        "workbuddy",
+        "work buddy"
+      ],
+      "sets": {
+        "idle": {
+          "frames": 4,
+          "suggestedIntervalSec": 0.70
+        }
+      }
+    },
+    {
+      "id": "dsh",
+      "displayName": "DSH",
+      "nameMatchers": [
+        "dsh",
+        "deepseek",
+        "harness"
+      ],
+      "sets": {
+        "idle": {
+          "frames": 4,
+          "suggestedIntervalSec": 0.70
+        }
+      }
+    },
+    {
+      "id": "claude",
+      "displayName": "Claude",
+      "nameMatchers": [
+        "claude"
+      ],
+      "sets": {
+        "idle": {
+          "frames": 4,
+          "suggestedIntervalSec": 0.70
+        }
+      }
+    },
+    {
+      "id": "whale",
+      "displayName": "Whale",
+      "nameMatchers": [],
+      "notes": "fallback pool",
+      "sets": {
+        "idle": {
+          "frames": 4,
+          "suggestedIntervalSec": 0.70
+        }
+      }
+    },
+    {
+      "id": "island",
+      "displayName": "Island",
+      "nameMatchers": [
+        "codeisland",
+        "island"
+      ],
+      "sets": {
+        "idle": {
+          "frames": 4,
+          "suggestedIntervalSec": 0.70
+        }
+      }
+    },
+    {
+      "id": "bolt",
+      "displayName": "Bolt",
+      "nameMatchers": [
+        "hermes"
+      ],
+      "sets": {
+        "idle": {
+          "frames": 4,
+          "suggestedIntervalSec": 0.70
+        }
+      }
+    },
+    {
+      "id": "magnifier",
+      "displayName": "Magnifier",
+      "nameMatchers": [
+        "review",
+        "doc"
+      ],
+      "sets": {
+        "idle": {
+          "frames": 4,
+          "suggestedIntervalSec": 0.70
+        }
+      }
+    },
+    {
+      "id": "flask",
+      "displayName": "Flask",
+      "nameMatchers": [
+        "test",
+        "build",
+        "bash"
+      ],
+      "sets": {
+        "idle": {
+          "frames": 4,
+          "suggestedIntervalSec": 0.70
+        }
+      }
+    },
+    {
+      "id": "generic",
+      "displayName": "Generic",
+      "nameMatchers": [],
+      "notes": "未知名称回退，不要哈希到品牌图标",
+      "sets": {
+        "idle": {
+          "frames": 4,
+          "suggestedIntervalSec": 0.70
+        }
+      }
+    }
+  ]
+}

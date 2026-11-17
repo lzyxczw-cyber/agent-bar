@@ -1,0 +1,42 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  dmg:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Build DMG
+        run: ./package.sh
+
+      - name: Update cask checksum
+        run: |
+          set -euo pipefail
+          ./tools/update-cask.sh Agent-Bar-*.dmg
+          if ! git diff --quiet Casks/agent-bar.rb; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add Casks/agent-bar.rb
+            git commit -m "chore: update cask checksum for ${GITHUB_REF_NAME}"
+            git push origin HEAD:main
+          fi
+
+      - name: Upload DMG to GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release create "${GITHUB_REF_NAME}" \
+            Agent-Bar-*.dmg Agent-Bar-*.dmg.sha256 \
+            --title "Agent Bar ${GITHUB_REF_NAME}" --generate-notes

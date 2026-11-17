@@ -1,0 +1,34 @@
+name: build
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Compiles the split Swift sources, packages the app and ad-hoc signs it.
+      - name: Build
+        run: ./build.sh
+
+      - name: Pure-function tests
+        run: ./tests/run.sh
+
+      # Two invariants that have already broken once: the deployment target must
+      # be old enough for the running OS (otherwise LaunchServices returns -10825)
+      # and the bundle must carry a real seal (otherwise notifications fail).
+      - name: Verify signature and deployment target
+        run: |
+          set -euo pipefail
+          codesign --verify --strict "Agent Bar.app"
+          MINOS=$(otool -l agentbar | awk '/LC_BUILD_VERSION/{found=1} found && /minos/{print $2; exit}')
+          echo "minos: $MINOS"
+          python3 - "$MINOS" <<'PY'
+          import sys
+          minos = tuple(int(part) for part in sys.argv[1].split('.'))
+          if minos > (14, 0):
+              raise SystemExit(f'deployment target regressed: {minos}')
+          PY
