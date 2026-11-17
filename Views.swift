@@ -986,20 +986,39 @@ struct BarView: View {
     }
 
     private var liveChip: some View {
-        let offline = store.isLive && store.bridgeNote != nil
-        let color: Color = !store.isLive
-            ? Color.white.opacity(0.30)
-            : (offline ? Color(red: 1.0, green: 0.75, blue: 0.30) : Color(red: 0.36, green: 0.90, blue: 0.62))
-        let text = !store.isLive ? "演示" : (offline ? "离线" : "实时")
+        let mode = store.feedMode
+        let color: Color
+        switch mode {
+        case .protocolMismatch:
+            color = Color(red: 1.0, green: 0.45, blue: 0.42)
+        case .demo:
+            color = Color.white.opacity(0.30)
+        case .offline:
+            color = Color(red: 1.0, green: 0.75, blue: 0.30)
+        case .live:
+            color = Color(red: 0.36, green: 0.90, blue: 0.62)
+        }
         return HStack(spacing: 4) {
             Circle().fill(color).frame(width: 4.5, height: 4.5)
-            Text(text)
+            Text(barModeLabel(mode))
                 .font(.system(size: 9.5, weight: .semibold))
                 .foregroundStyle(color)
         }
         .padding(.horizontal, 6)
         .padding(.vertical, 2)
         .background(Capsule().fill(Color.white.opacity(0.06)))
+        .help(mode == .protocolMismatch ? (store.protocolNote ?? "DSH 协议不匹配") : barModeLabel(mode))
+    }
+
+    private var agentCountText: String {
+        switch store.feedMode {
+        case .protocolMismatch:
+            return store.agents.isEmpty ? "DSH" : "\(store.agents.count) 个外部"
+        case .live, .offline:
+            return "\(store.liveTotal) 个 agent"
+        case .demo:
+            return "\(store.completedToday) 完成"
+        }
     }
 
     private var approvalBadge: some View {
@@ -1033,7 +1052,7 @@ struct BarView: View {
                 approvalBadge
             }
             liveChip
-            Text(store.isLive ? "\(store.liveTotal) 个 agent" : "\(store.completedToday) 完成")
+            Text(agentCountText)
                 .font(.system(size: 10.5, weight: .medium))
                 .foregroundStyle(Color.white.opacity(0.45))
             Text("\(store.runningCount) 运行")
@@ -1263,6 +1282,8 @@ struct PanelView: View {
     @State private var showSettings = false
     @State private var armedApprovalId: String?
     @State private var thoughtFallback = false
+    @State private var questionSelections: [String: Set<String>] = [:]
+    @State private var questionCustom: [String: String] = [:]
     @AppStorage("AgentBarNotificationsEnabled") private var notificationsEnabled = true
     @AppStorage("AgentBarShowChineseThought") private var showChineseThought = true
 
@@ -1386,6 +1407,9 @@ struct PanelView: View {
             } else {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 10) {
+                        if store.feedMode == .protocolMismatch {
+                            protocolBanner
+                        }
                         let waiting = store.waitingAgents
                         ForEach(waiting.prefix(3)) { agent in
                             approvalCard(agent)
@@ -1455,12 +1479,19 @@ struct PanelView: View {
             Text("Agent Bar")
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(Color.white.opacity(0.95))
-            Text(store.isLive ? (store.bridgeNote == nil ? "DSH 实时" : "桥接离线") : (realMode ? "真实模式 · Demo" : "模拟数据 · Demo"))
+            Text("非官方")
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundStyle(Color.white.opacity(0.62))
+                .padding(.horizontal, 5)
+                .padding(.vertical, 1)
+                .overlay(Capsule().strokeBorder(Color.white.opacity(0.22), lineWidth: 0.6))
+                .help("与 DeepSeek Harness、Codex、Claude、Grok、WorkBuddy 无隶属或背书关系")
+            Text(panelModeText)
                 .font(.system(size: 9.5, weight: .medium))
-                .foregroundStyle(store.isLive ? Color(red: 0.36, green: 0.90, blue: 0.62) : Color.white.opacity(0.32))
+                .foregroundStyle(panelModeColor)
                 .padding(.horizontal, 6)
                 .padding(.vertical, 2)
-                .background(Capsule().fill(store.isLive ? Color(red: 0.36, green: 0.90, blue: 0.62).opacity(0.10) : Color.white.opacity(0.06)))
+                .background(Capsule().fill(panelModeColor.opacity(0.10)))
             Spacer()
             Text("\(store.runningCount) 运行 · \(store.waitingCount) 待审批")
                 .font(.system(size: 10.5, weight: .medium))
@@ -1598,9 +1629,10 @@ struct PanelView: View {
             .foregroundStyle(Color(red: 0.62, green: 0.82, blue: 1.0))
 
             if let thought = displayedThought(agent) {
-                Text(thought)
+                Text(inlineThoughtAttributed(thought))
                     .font(.system(size: 10.5))
                     .foregroundStyle(Color.white.opacity(0.72))
+                    .tint(Color(red: 0.55, green: 0.82, blue: 1.0))
                     .lineLimit(8)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -1694,7 +1726,217 @@ struct PanelView: View {
         }
     }
 
+    private var panelModeText: String {
+        switch store.feedMode {
+        case .protocolMismatch: return "协议不匹配"
+        case .live: return "DSH 实时"
+        case .offline: return "桥接离线"
+        case .demo: return realMode ? "真实模式 · 演示" : "模拟数据 · 演示"
+        }
+    }
+
+    private var panelModeColor: Color {
+        switch store.feedMode {
+        case .protocolMismatch: return Color(red: 1.0, green: 0.45, blue: 0.42)
+        case .live: return Color(red: 0.36, green: 0.90, blue: 0.62)
+        case .offline: return Color(red: 1.0, green: 0.75, blue: 0.30)
+        case .demo: return Color.white.opacity(0.32)
+        }
+    }
+
+    private var protocolBanner: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("协议不匹配")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Color(red: 1.0, green: 0.62, blue: 0.55))
+            Text(store.protocolNote ?? "DSH 的 session/list 与当前桥不一致。")
+                .font(.system(size: 10.5))
+                .foregroundStyle(Color.white.opacity(0.72))
+                .fixedSize(horizontal: false, vertical: true)
+            Text("状态条保持这个提示，不会改用演示数据。")
+                .font(.system(size: 10))
+                .foregroundStyle(Color.white.opacity(0.40))
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color(red: 1.0, green: 0.45, blue: 0.38).opacity(0.12)))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Color(red: 1.0, green: 0.45, blue: 0.38).opacity(0.28), lineWidth: 0.7))
+    }
+
+    @ViewBuilder
     private func approvalCard(_ agent: Agent) -> some View {
+        if store.isLive && !agent.isExternal && agent.approvalKind == "question" {
+            questionCard(agent)
+        } else {
+            commandApprovalCard(agent)
+        }
+    }
+
+    private func customBinding(_ questionID: String) -> Binding<String> {
+        Binding(
+            get: { questionCustom[questionID] ?? "" },
+            set: { questionCustom[questionID] = $0 }
+        )
+    }
+
+    private func toggleQuestionOption(_ question: AgentQuestion, label: String) {
+        var chosen = questionSelections[question.id] ?? []
+        if question.multiSelect {
+            if chosen.contains(label) { chosen.remove(label) } else { chosen.insert(label) }
+        } else if chosen.contains(label) {
+            chosen = []
+        } else {
+            chosen = [label]
+        }
+        questionSelections[question.id] = chosen
+    }
+
+    private func submitQuestion(_ agent: Agent, cancelled: Bool) {
+        guard let approvalId = agent.approvalId else {
+            store.approvalNotice = "问题 ID 缺失，请用打开 DSH 处理"
+            return
+        }
+        if cancelled {
+            _ = store.submitQuestion(approvalId: approvalId, sessionId: agent.id, answers: [], cancelled: true)
+            return
+        }
+        switch buildQuestionAnswers(questions: agent.questions, selections: questionSelections, customText: questionCustom) {
+        case .failure(let error):
+            store.approvalNotice = error.message
+        case .success(let answers):
+            _ = store.submitQuestion(approvalId: approvalId, sessionId: agent.id, answers: answers, cancelled: false)
+        }
+    }
+
+    private func questionCard(_ agent: Agent) -> some View {
+        let needsHold = agent.questions.contains { $0.intent == "approval" }
+        return VStack(alignment: .leading, spacing: 9) {
+            HStack(spacing: 6) {
+                Image(systemName: "questionmark.bubble.fill")
+                    .font(.system(size: 10, weight: .bold))
+                Text(agent.questionAnswerable ? "需要你的回答" : "问题只读")
+                    .font(.system(size: 11.5, weight: .semibold))
+                Spacer()
+                Text(agent.name)
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(Color.white.opacity(0.45))
+            }
+            .foregroundStyle(Color(red: 1.0, green: 0.80, blue: 0.38))
+
+            if agent.questionAnswerable {
+                ForEach(agent.questions) { question in
+                    VStack(alignment: .leading, spacing: 6) {
+                        if let header = question.header, !header.isEmpty {
+                            Text(header)
+                                .font(.system(size: 9.5, weight: .semibold))
+                                .foregroundStyle(Color.white.opacity(0.40))
+                        }
+                        Text(question.prompt)
+                            .font(.system(size: 11.5))
+                            .foregroundStyle(Color.white.opacity(0.88))
+                            .fixedSize(horizontal: false, vertical: true)
+                        if let detail = question.detail, !detail.isEmpty {
+                            Text(detail)
+                                .font(.system(size: 10))
+                                .foregroundStyle(Color.white.opacity(0.48))
+                                .lineLimit(6)
+                        }
+                        ForEach(question.options) { option in
+                            let selected = questionSelections[question.id]?.contains(option.label) == true
+                            Button(action: { toggleQuestionOption(question, label: option.label) }) {
+                                HStack(alignment: .top, spacing: 6) {
+                                    Image(systemName: selected ? (question.multiSelect ? "checkmark.square.fill" : "largecircle.fill.circle") : (question.multiSelect ? "square" : "circle"))
+                                        .font(.system(size: 10, weight: .semibold))
+                                        .padding(.top, 1)
+                                    VStack(alignment: .leading, spacing: 1) {
+                                        Text(option.title)
+                                            .font(.system(size: 11, weight: .semibold))
+                                        if let detail = option.detail, !detail.isEmpty {
+                                            Text(detail)
+                                                .font(.system(size: 9.5))
+                                                .foregroundStyle(Color.white.opacity(0.40))
+                                        }
+                                    }
+                                    Spacer(minLength: 0)
+                                }
+                                .foregroundStyle(Color.white.opacity(selected ? 0.92 : 0.68))
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 5)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.white.opacity(selected ? 0.12 : 0.04)))
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        if question.allowCustom {
+                            TextField(question.options.isEmpty ? "输入回答" : "其他回答", text: customBinding(question.id))
+                                .textFieldStyle(.plain)
+                                .font(.system(size: 11))
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 5)
+                                .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.black.opacity(0.28)))
+                        }
+                    }
+                }
+                HStack(spacing: 8) {
+                    if needsHold {
+                        HoldToConfirmButton(title: "按住提交", icon: "checkmark", tint: Color(red: 0.46, green: 0.90, blue: 0.62)) {
+                            submitQuestion(agent, cancelled: false)
+                        }
+                    } else {
+                        Button(action: { submitQuestion(agent, cancelled: false) }) {
+                            Text("提交回答")
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(Color.black)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 5)
+                                .background(Capsule().fill(Color(red: 0.46, green: 0.90, blue: 0.62)))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    Button(action: { submitQuestion(agent, cancelled: true) }) {
+                        Text("取消问答")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(Color.white.opacity(0.7))
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 5)
+                            .background(Capsule().fill(Color.white.opacity(0.08)))
+                    }
+                    .buttonStyle(.plain)
+                    .help("向 DSH 发送 ASK_CANCELLED，不会改成某个选项")
+                    Spacer()
+                    Text(store.approvalNotice ?? (needsHold ? "授权题需长按提交" : "选中选项后提交"))
+                        .font(.system(size: 9.5))
+                        .foregroundStyle(Color.white.opacity(0.32))
+                        .lineLimit(1)
+                }
+            } else {
+                Text(agent.approvalCommand ?? agent.questions.first?.prompt ?? "这个问题暂不能在面板里安全回答")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.white.opacity(0.78))
+                    .fixedSize(horizontal: false, vertical: true)
+                Text("题型无法按 DSH 的 answers[{id, selected, custom}] 校验，保持只读。请打开 DSH 处理。")
+                    .font(.system(size: 10))
+                    .foregroundStyle(Color.white.opacity(0.40))
+            }
+
+            if let host = store.dshURL, let url = URL(string: host) {
+                Button(action: { NSWorkspace.shared.open(url) }) {
+                    Text("打开 DSH 处理")
+                        .font(.system(size: 10))
+                        .foregroundStyle(Color.white.opacity(0.65))
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 4)
+                        .background(Capsule().fill(Color.white.opacity(0.07)))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(12)
+        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color(red: 1.0, green: 0.72, blue: 0.25).opacity(0.07)))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Color(red: 1.0, green: 0.72, blue: 0.25).opacity(0.22), lineWidth: 0.8))
+    }
+
+    private func commandApprovalCard(_ agent: Agent) -> some View {
         VStack(alignment: .leading, spacing: 9) {
             HStack(spacing: 6) {
                 Image(systemName: "hand.raised.fill")
@@ -1790,6 +2032,11 @@ struct PanelView: View {
                                 .foregroundStyle(Color.white.opacity(0.22))
                         }
                     }
+                } else if store.feedMode == .protocolMismatch {
+                    Text(agent.isExternal ? "外部 agent · 只读" : "协议不匹配，演示操作已停用")
+                        .font(.system(size: 10.5, weight: .medium))
+                        .foregroundStyle(Color(red: 1.0, green: 0.62, blue: 0.55))
+                    Spacer()
                 } else {
                     Button(action: { store.approve(agent.id) }) {
                         Text("允许")
@@ -1917,6 +2164,11 @@ struct PanelView: View {
                         .foregroundStyle(Color.white.opacity(0.25))
                 }
                 .padding(.top, 2)
+
+                Text("非官方。与 DeepSeek Harness、Codex、Claude、Grok、WorkBuddy 无隶属、合作或背书关系。DSH 接入读取本机凭据，随对方版本可能失效。")
+                    .font(.system(size: 10))
+                    .foregroundStyle(Color.white.opacity(0.46))
+                    .fixedSize(horizontal: false, vertical: true)
 
                 settingsRow(title: "固定面板", subtitle: "切换到其他 App 时面板保持展开") {
                     Toggle("", isOn: $ui.isPinned)

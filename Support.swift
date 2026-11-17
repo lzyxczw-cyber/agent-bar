@@ -159,6 +159,122 @@ func agentIconInterval(forStatus status: String, suggestedIntervalSec: Double?) 
     }
 }
 
+/// Drop HTML tags. Markdown autolinks such as `<https://example.com>` are kept.
+func stripHTMLTags(_ text: String) -> String {
+    let pattern = "</?([A-Za-z][A-Za-z0-9]*)(?:\\s[^>]*)?/?>"
+    guard let regex = try? NSRegularExpression(pattern: pattern) else { return text }
+    let range = NSRange(text.startIndex..., in: text)
+    return regex.stringByReplacingMatches(in: text, range: range, withTemplate: "")
+}
+
+/// Inline markdown for the panel thought view. Block syntax is not interpreted,
+/// and HTML is removed before parsing so it cannot become formatting.
+func inlineThoughtAttributed(_ text: String) -> AttributedString {
+    let source = stripHTMLTags(text)
+    var options = AttributedString.MarkdownParsingOptions()
+    options.interpretedSyntax = .inlineOnlyPreservingWhitespace
+    options.failurePolicy = .returnPartiallyParsedIfPossible
+    if let parsed = try? AttributedString(markdown: source, options: options) {
+        return parsed
+    }
+    return AttributedString(source)
+}
+
+enum BarFeedMode: String, Equatable {
+    case demo
+    case live
+    case offline
+    case protocolMismatch
+}
+
+/// Demo stays demo only when the bridge is not reporting a fresh protocol mismatch.
+func barFeedMode(protocolStatus: String?, isLive: Bool, bridgeFresh: Bool, bridgeAlive: Bool, bridgeNote: String?) -> BarFeedMode {
+    if protocolStatus == "mismatch" && bridgeFresh && bridgeAlive {
+        return .protocolMismatch
+    }
+    if isLive {
+        if !bridgeFresh || !bridgeAlive || bridgeNote != nil {
+            return .offline
+        }
+        return .live
+    }
+    return .demo
+}
+
+func barModeLabel(_ mode: BarFeedMode) -> String {
+    switch mode {
+    case .protocolMismatch: return "协议不匹配"
+    case .demo: return "演示"
+    case .offline: return "离线"
+    case .live: return "实时"
+    }
+}
+
+struct AgentQuestionOption: Equatable, Identifiable {
+    let id: String
+    let label: String
+    let detail: String?
+    let display: String?
+
+    var title: String {
+        if let display, !display.isEmpty { return display }
+        return label
+    }
+}
+
+struct AgentQuestion: Equatable, Identifiable {
+    let id: String
+    let prompt: String
+    let header: String?
+    let detail: String?
+    let multiSelect: Bool
+    let allowCustom: Bool
+    let intent: String?
+    let options: [AgentQuestionOption]
+}
+
+struct QuestionAnswer: Equatable {
+    let id: String
+    let selected: [String]
+    let custom: String?
+}
+
+struct QuestionAnswerError: Error, Equatable {
+    let message: String
+}
+
+/// Client-side check matching bridge/lib/questions.mjs. Labels, not display text, are submitted.
+func buildQuestionAnswers(
+    questions: [AgentQuestion],
+    selections: [String: Set<String>],
+    customText: [String: String]
+) -> Result<[QuestionAnswer], QuestionAnswerError> {
+    guard !questions.isEmpty else { return .failure(QuestionAnswerError(message: "没有可回答的问题")) }
+    var answers: [QuestionAnswer] = []
+    for question in questions {
+        let chosen = selections[question.id] ?? []
+        let allowed = Set(question.options.map(\.label))
+        if !chosen.isSubset(of: allowed) {
+            return .failure(QuestionAnswerError(message: "选项已变化，请重新选择"))
+        }
+        let selected = question.options.map(\.label).filter { chosen.contains($0) }
+        let rawCustom = customText[question.id]?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if rawCustom.count > 2000 { return .failure(QuestionAnswerError(message: "回答太长")) }
+        let custom = rawCustom.isEmpty ? nil : rawCustom
+        if custom != nil && !question.allowCustom {
+            return .failure(QuestionAnswerError(message: "这道题只能选择给出的选项"))
+        }
+        if !question.multiSelect && (selected.count > 1 || (!selected.isEmpty && custom != nil)) {
+            return .failure(QuestionAnswerError(message: "单选题请选择一项，或只填写自定义回答"))
+        }
+        if selected.isEmpty && custom == nil {
+            return .failure(QuestionAnswerError(message: "请回答所有问题"))
+        }
+        answers.append(QuestionAnswer(id: question.id, selected: selected, custom: custom))
+    }
+    return .success(answers)
+}
+
 /// Phase offset used by both PNG and character-grid avatars so neighbouring
 /// icons do not advance on the same tick.
 func agentIconFrameIndex(time: Double, interval: Double, frameCount: Int, phase: Int) -> Int {

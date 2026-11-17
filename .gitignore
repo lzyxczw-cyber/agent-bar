@@ -18,7 +18,7 @@ bridge/usage-state.json
 *.log
 *.pid
 
-# dev screenshots (docs/ holds the curated images)
+# dev screenshots. The public tree has no docs/*.png product shots.
 shots/
 
 # misc

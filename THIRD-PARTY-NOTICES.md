@@ -27,10 +27,13 @@ DSH Gateway mux 客户端，原样复制过来并保持同步。该文件归本�
 [wxtsky/CodeIsland](https://github.com/wxtsky/CodeIsland)。本项目与该项目的**代码没有任何关系，
 也未经其授权或背书**。
 
-为确认这一点，发布前做了一次机械比对：把 `main.swift` 与 CodeIsland 全部 465 个 Swift 源文件按
-『归一化后的 8 行滑窗』做重合度计算，结果只有 **1 处重合片段**，即 Apple 官方文档给出的
+为确认这一点，发布前对当时的 Swift 实现与 CodeIsland 全部 465 个 Swift 源文件按
+『归一化后的 8 行滑窗』做过重合度计算，结果只有 **1 处重合片段**，即 Apple 官方文档给出的
 `RegisterEventHotKey` / `InstallEventHandler` 标准调用样板——属于使用系统 API 的必然写法，
 不具备可版权性。顶层类型名无实质重合（仅 `AppDelegate` / `AgentStatus` 这类通用命名）。
+
+公开的 v0.3.3 树已经把界面拆开：`main.swift` 只负责启动，其余在 `Support.swift`、
+`Models.swift`、`Views.swift`、`Chrome.swift`、`AppDelegate.swift`。上面的比对针对的是拆分前的实现，不是「现在仍有一份 3675 行的 `main.swift`」。
 
 结论：**独立实现**。产品概念、信息架构、交互思路本身不受著作权保护。若后续从任何 MIT 项目
 借鉴了具体代码，必须在该文件保留其原始版权声明，并在此处登记。
@@ -55,12 +58,12 @@ DSH Gateway mux 客户端，原样复制过来并保持同步。该文件归本�
 ## 6. 运行时数据不入库
 
 `status.json`、`status.sock`、`agents/*.json`、日志、构建产物、开发期截图均由 [`.gitignore`](.gitignore) 排除。
-仓库里的 `docs/*.png` 是刻意挑选的产品截图，公开前需确认其中不含他人页面内容与个人敏感信息
-（余额、会话标题、家目录路径）。
+这个公开树的 `docs/` 里**没有** `docs/*.png`。不要把带本机桌面、私人窗口、余额或凭据的截图提交进仓库。
 
 ## 7. DSH 集成声明
 
 `bridge/` 通过读取本机 `$DSH_HOME/.credentials.yaml` 中的 browser-session 密钥，在内存中自签本机回环
-地址的会话 Cookie，以只读方式访问 DeepSeek Harness 的本地接口。这是一种**非官方、未公开的集成方式**，
-随 DSH 版本变化可能失效；本项目与 DeepSeek Harness 官方无关。它不修改 DSH 任何状态，
-但使用者应知悉这一点。
+地址的会话 Cookie，访问 DeepSeek Harness 的本地接口。这是一种**非官方、未公开的集成方式**，
+随 DSH 版本变化可能失效；本项目与 DeepSeek Harness 官方无关。它不创建会话、不发送 prompt。
+已经 pending 的审批，以及能校验的 `ask_user_question`，会通过 `$events/result` 回答。
+使用者应知悉这一点。

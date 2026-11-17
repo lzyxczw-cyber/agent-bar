@@ -12,8 +12,11 @@
  * Auth: a browser-session cookie is minted in memory from the durable signing
  * secret in $DSH_HOME/.credentials.yaml (see lib/dsh-auth.mjs).
  * The feed never sends prompts or messages. The optional local control channel
- * (control/request-*.json) may answer an already-pending approval/request via
- * $events/result; it cannot choose commands, send prompts, or answer questions.
+ * (control/request-*.json) may answer an already-pending approval/request, or a
+ * supported user-questions/request, via $events/result. It cannot choose
+ * commands or send prompts. Question shapes this bridge cannot validate stay
+ * read-only. A DSH server whose session/list probe does not match is reported
+ * as dsh.protocol = "mismatch" instead of a healthy feed.
  *
  * Output:
  *   bridge/status.json   atomic snapshot, schema version 1
@@ -33,6 +36,8 @@ import { fileURLToPath } from 'node:url';
 import { discoverDsh, cookieFor } from './lib/dsh-auth.mjs';
 import { DshRpc, DshRpcError } from './lib/rpc.mjs';
 import { ThoughtTranslator } from './lib/translate.mjs';
+import { classifyDshProbe } from './lib/protocol.mjs';
+import { buildQuestionResult, normalizeUserQuestions, QUESTION_CANCELLED_OUTCOME } from './lib/questions.mjs';
 import { openMux, openEventStream } from './vendor/ws-mux.mjs';
 
 const BRIDGE_DIR = path.dirname (fileURLToPath (import.meta.url));
@@ -185,6 +190,22 @@ function numberField (value) {
   return Number.isFinite (number) ? number : null;
 }
 
+function publicApproval (approval) {
+  const row = {
+    id: approval.id,
+    kind: approval.kind,
+    tool: approval.tool,
+    command: approval.command || approval.reason || null,
+    reason: approval.reason || null,
+    createdAt: approval.createdAt
+  };
+  if (approval.kind === 'question') {
+    row.questions = Array.isArray (approval.questions) ? approval.questions : [];
+    row.answerable = approval.answerable === true;
+  }
+  return row;
+}
+
 function normalizeExternalApprovals (approvals, agentId) {
   if (!Array.isArray (approvals)) return [];
   const rows = [];
@@ -317,6 +338,8 @@ class DshBridge {
     this.events = null;
     this.connected = false;
     this.eventsConnected = false;
+    this.protocolStatus = 'unavailable';
+    this.protocolError = null;
     this.lastError = null;
     this.nextDiscoveryAt = 0;
     this.sessions = new Map ();
@@ -374,14 +397,44 @@ class DshBridge {
       this.rpc = null;
       this.dsh = null;
       this.lastError = error.message;
+      // A failed discovery is "DSH not running", not a protocol mismatch.
+      // Keep an existing mismatch until a later session/list probe succeeds,
+      // so a downed GUI does not look like healthy simulated data.
+      if (this.protocolStatus !== 'mismatch') {
+        this.protocolStatus = 'unavailable';
+        this.protocolError = null;
+      }
       this.nextDiscoveryAt = Date.now () + 5000;
       logThrottled ('discover', 10000, 'DSH not reachable: ' + error.message);
       return false;
     }
   }
 
+  noteProtocolMismatch (message) {
+    this.protocolStatus = 'mismatch';
+    this.protocolError = compact (message || 'DSH protocol mismatch', 180);
+    this.connected = false;
+    this.lastError = this.protocolError;
+    logThrottled ('protocol', 10000, 'DSH protocol mismatch: ' + this.protocolError);
+  }
+
   async refreshSessions () {
-    const items = await this.rpc.listSessions ();
+    let value;
+    try {
+      value = await this.rpc.call ('session/list', { _request: {} });
+    } catch (error) {
+      const classified = classifyDshProbe ({ discovered: true, error, value: null });
+      if (classified.mismatch) this.noteProtocolMismatch (classified.error);
+      throw error;
+    }
+    const classified = classifyDshProbe ({ discovered: true, error: null, value });
+    if (classified.mismatch) {
+      this.noteProtocolMismatch (classified.error);
+      throw new DshRpcError ('gateway/protocol', classified.error || 'session/list shape mismatch', {}, 200);
+    }
+    this.protocolStatus = 'ok';
+    this.protocolError = null;
+    const items = value.items;
     const next = new Map ();
     for (const row of items) next.set (row.sessionId, normalizeSession (row));
     this.sessions = next;
@@ -592,8 +645,13 @@ class DshBridge {
     if (!isApproval && !isQuestion) return;
     const request = frame.request || {};
     let reason = pickLocalized (request.displayReason) || (typeof request.reason === 'string' ? request.reason : null);
-    if (!reason && isQuestion && Array.isArray (request.questions) && request.questions.length > 0) {
-      reason = request.questions[0].question || request.questions[0].header || null;
+    let questions = [];
+    let answerable = false;
+    if (isQuestion) {
+      const normalized = normalizeUserQuestions (request);
+      questions = normalized.questions;
+      answerable = normalized.answerable;
+      if (!reason && questions.length > 0) reason = questions[0].question || questions[0].header || null;
     }
     const approval = {
       id: frame.eventId,
@@ -603,6 +661,8 @@ class DshBridge {
       callId: request.callId || null,
       reason,
       command: null,
+      questions,
+      answerable,
       createdAt: Date.now ()
     };
     this.approvals.set (approval.id, approval);
@@ -818,7 +878,8 @@ class DshBridge {
     const now = Date.now ();
     const rows = [];
     const ids = new Set ();
-    for (const session of this.sessions.values ()) {
+    // A mismatched protocol must not keep publishing DSH rows that look live.
+    if (this.protocolStatus !== 'mismatch') for (const session of this.sessions.values ()) {
       const approvals = this.approvalsFor (session.id);
       const running = this.liveStatus.get (session.id) === true || (this.liveStatus.get (session.id) === undefined && session.running);
       const active = running || approvals.length > 0 || (now - session.updatedAt <= this.config.activeWindowMs);
@@ -848,19 +909,12 @@ class DshBridge {
         thought,
         thoughtZh: this.translator.thoughtZhFor (session.id, thought),
         process: this.processes.get (session.id) || [],
-        approvals: approvals.map ((approval) => ({
-          id: approval.id,
-          kind: approval.kind,
-          tool: approval.tool,
-          command: approval.command || approval.reason || null,
-          reason: approval.reason || null,
-          createdAt: approval.createdAt
-        })),
+        approvals: approvals.map (publicApproval),
         external: false
       });
       ids.add (session.id);
     }
-    for (const approval of this.approvals.values ()) {
+    if (this.protocolStatus !== 'mismatch') for (const approval of this.approvals.values ()) {
       if (ids.has (approval.sessionId)) continue;
       rows.push ({
         id: approval.sessionId,
@@ -881,7 +935,7 @@ class DshBridge {
         thought: null,
         thoughtZh: null,
         process: [],
-        approvals: [{ id: approval.id, kind: approval.kind, tool: approval.tool, command: approval.command || approval.reason || null, reason: approval.reason || null, createdAt: approval.createdAt }],
+        approvals: [publicApproval (approval)],
         external: false
       });
     }
@@ -913,10 +967,12 @@ class DshBridge {
       dsh: {
         url: this.dsh ? this.dsh.origin : (this.config.url || null),
         source: this.dsh ? this.dsh.source : null,
-        connected: this.connected,
-        eventsConnected: this.eventsConnected,
-        error: this.connected ? null : this.lastError,
-        sessionsKnown: this.sessions.size
+        connected: this.connected && this.protocolStatus !== 'mismatch',
+        eventsConnected: this.eventsConnected && this.protocolStatus !== 'mismatch',
+        protocol: this.protocolStatus,
+        protocolError: this.protocolError,
+        error: this.protocolStatus === 'mismatch' ? this.protocolError : (this.connected ? null : this.lastError),
+        sessionsKnown: this.protocolStatus === 'mismatch' ? 0 : this.sessions.size
       },
       counts: { agents: agents.length, running, approvals },
       usage,
@@ -1032,11 +1088,34 @@ class DshBridge {
     }
   }
 
+  outcomeForControl (approval, request) {
+    if (!approval || (approval.kind !== 'approval' && approval.kind !== 'question')) {
+      return { ok: false, reason: 'unsupported-kind' };
+    }
+    if (approval.kind === 'approval') {
+      if (request.decision !== 'allowed-once' && request.decision !== 'rejected') return { ok: false, reason: 'invalid-decision' };
+      return { ok: true, outcome: { kind: 'result', value: request.decision }, summary: request.decision };
+    }
+    if (approval.answerable !== true) return { ok: false, reason: 'unsupported-question' };
+    if (request.decision === 'cancelled') {
+      return { ok: true, outcome: QUESTION_CANCELLED_OUTCOME, summary: 'cancelled' };
+    }
+    if (request.decision !== 'answered') return { ok: false, reason: 'invalid-decision' };
+    const built = buildQuestionResult (approval.questions, request.answers);
+    if (!built.ok) return built;
+    const summary = built.value.answers
+      .map ((answer) => answer.id + '=' + answer.selected.join ('|') + (answer.custom ? '+custom' : ''))
+      .join ('; ');
+    return { ok: true, outcome: { kind: 'result', value: built.value }, summary };
+  }
+
   validateControlRequest (request) {
     if (!request || typeof request !== 'object' || Array.isArray (request)) return { ok: false, reason: 'invalid-request' };
     if (request.schema !== 1) return { ok: false, reason: 'invalid-schema' };
     if (typeof request.approvalId !== 'string' || request.approvalId === '') return { ok: false, reason: 'invalid-approval-id' };
-    if (request.decision !== 'allowed-once' && request.decision !== 'rejected') return { ok: false, reason: 'invalid-decision' };
+    if (request.decision !== 'allowed-once' && request.decision !== 'rejected' && request.decision !== 'answered' && request.decision !== 'cancelled') {
+      return { ok: false, reason: 'invalid-decision' };
+    }
     if (typeof request.token !== 'string' || request.token.length !== this.controlToken.length) return { ok: false, reason: 'invalid-token' };
     const supplied = Buffer.from (request.token);
     const expected = Buffer.from (this.controlToken);
@@ -1052,8 +1131,10 @@ class DshBridge {
   /**
    * Consume local approval decisions written by the notch UI into control/.
    * This is the only write path in the bridge: a decision for an already
-   * pending approval/request event, answered through $events/result.
-   * It never sends prompts, never chooses arbitrary commands, and every
+   * pending approval/request, or a supported user-questions/request, answered
+   * through $events/result. It never sends prompts and never chooses arbitrary
+   * commands. Question answers are limited to the labels on that pending
+   * request (plus optional custom text when the question allows it). Every
    * attempt is appended to audit.log.
    */
   async processApprovalControl () {
@@ -1088,9 +1169,13 @@ class DshBridge {
           this.auditControl ({ source: 'notch', result: 'stale', approvalId: request.approvalId, decision: request.decision });
           continue;
         }
-        if (approval.kind !== 'approval') {
+        const outcome = this.outcomeForControl (approval, request);
+        if (!outcome.ok) {
           this.safeUnlink (file);
-          this.auditControl ({ source: 'notch', result: 'unsupported-kind', approvalId: request.approvalId, kind: approval.kind });
+          this.auditControl ({
+            source: 'notch', result: outcome.reason, approvalId: request.approvalId,
+            kind: approval.kind, decision: request.decision
+          });
           continue;
         }
         if (request.sessionId && request.sessionId !== approval.sessionId) {
@@ -1109,17 +1194,17 @@ class DshBridge {
         try {
           await this.events.answer ({
             eventId: approval.id,
-            outcome: { kind: 'result', value: request.decision }
+            outcome: outcome.outcome
           });
           this.approvals.delete (approval.id);
           this.safeUnlink (file);
           this.auditControl ({
             source: 'notch', result: 'ok', approvalId: approval.id,
             sessionId: approval.sessionId, tool: approval.tool,
-            command: compact (approval.command || approval.reason || '', 300),
+            command: compact (outcome.summary || approval.command || approval.reason || '', 300),
             decision: request.decision
           });
-          log ('approval answered: ' + approval.id + ' -> ' + request.decision);
+          log (approval.kind + ' answered: ' + approval.id + ' -> ' + request.decision);
           this.scheduleTick (200);
         } catch (error) {
           const entry = {

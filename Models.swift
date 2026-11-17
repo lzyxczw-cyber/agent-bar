@@ -76,6 +76,9 @@ struct Agent: Identifiable {
     var isExternal: Bool = false
     var sessions: [AgentSession] = []
     var appBundleID: String? = nil
+    var approvalKind: String? = nil
+    var questions: [AgentQuestion] = []
+    var questionAnswerable: Bool = false
 }
 
 // MARK: - Live feed from bridge/status.json (dsh-bridge)
@@ -87,6 +90,14 @@ struct LiveFeed: Decodable {
         let error: String?
         let url: String?
         let sessionsKnown: Int?
+        let protocolStatus: String?
+        let protocolError: String?
+
+        enum CodingKeys: String, CodingKey {
+            case connected, eventsConnected, error, url, sessionsKnown
+            case protocolStatus = "protocol"
+            case protocolError
+        }
     }
 
     struct BridgeInfo: Decodable {
@@ -128,6 +139,23 @@ struct LiveFeed: Decodable {
         let approvals: Int?
     }
 
+    struct QuestionOptionDTO: Decodable {
+        let label: String?
+        let description: String?
+        let display: String?
+    }
+
+    struct QuestionDTO: Decodable {
+        let id: String?
+        let question: String?
+        let header: String?
+        let detail: String?
+        let multiSelect: Bool?
+        let allowCustom: Bool?
+        let intent: String?
+        let options: [QuestionOptionDTO]?
+    }
+
     struct Approval: Decodable {
         let id: String?
         let kind: String?
@@ -135,6 +163,8 @@ struct LiveFeed: Decodable {
         let command: String?
         let reason: String?
         let createdAt: Double?
+        let questions: [QuestionDTO]?
+        let answerable: Bool?
     }
 
     struct LiveSession: Decodable {
@@ -198,13 +228,20 @@ final class DemoStore: ObservableObject {
     @Published var dshURL: String? = "http://127.0.0.1:49469"
     @Published var controlDirectory: URL?
     @Published var approvalNotice: String?
+    @Published var feedMode: BarFeedMode = .demo
+    @Published var protocolNote: String?
+
+    private let demoSnapshot: [Agent]
+    private let demoUsageTokens = 7_333_366
+    private let demoBalance = "¥89.94"
+    private let demoHistory = [5_410_000, 6_120_000, 5_880_000, 7_010_000, 6_430_000, 7_002_000]
 
     private var timer: Timer?
     private let toolPool = ["tools.run_code", "Edit App.swift", "Read README.md", "WebSearch: agent notch", "subagent: reviewer", "Bash: swift test"]
     private let waitPool = ["Bash: swift build --configuration release", "Edit Sources/NotchDemo.swift", "Bash: clean build artifacts"]
 
     init() {
-        agents = [
+        let seeded: [Agent] = [
             Agent(id: UUID().uuidString, name: "DeepSeek Harness", project: "deepseek-harness", tool: "tools.run_code",
                   status: .running, startedAt: Date().addingTimeInterval(-42), approvalCommand: nil, note: nil,
                   thought: "正在把思考详情与用量余额接入胶囊：先解析 bridge 的最新事件，再把 reasoning 摘要显示到胶囊尾部。",
@@ -250,6 +287,8 @@ final class DemoStore: ObservableObject {
                   ],
                   tokens: 32_100, tokensToday: 8_400),
         ]
+        agents = seeded
+        demoSnapshot = seeded
 
         let t = Timer(timeInterval: 1.0, repeats: true) { [weak self] _ in self?.step() }
         RunLoop.main.add(t, forMode: .common)
@@ -263,7 +302,7 @@ final class DemoStore: ObservableObject {
 
     private func step() {
         tick += 1
-        if isLive { return }
+        if isLive || feedMode == .protocolMismatch { return }
         let now = Date()
         for i in agents.indices {
             switch agents[i].status {
@@ -338,6 +377,43 @@ final class DemoStore: ObservableObject {
     // MARK: Live bridge feed
 
     func submitApproval(approvalId: String, sessionId: String, tool: String, command: String?, decision: String) -> Bool {
+        submitControl(
+            approvalId: approvalId,
+            sessionId: sessionId,
+            tool: tool,
+            command: command,
+            decision: decision,
+            answers: nil,
+            notice: "已发送，等待 DSH 处理…"
+        )
+    }
+
+    func submitQuestion(approvalId: String, sessionId: String, answers: [QuestionAnswer], cancelled: Bool) -> Bool {
+        let rows: [[String: Any]]? = cancelled ? nil : answers.map { answer in
+            var row: [String: Any] = ["id": answer.id, "selected": answer.selected]
+            if let custom = answer.custom { row["custom"] = custom }
+            return row
+        }
+        return submitControl(
+            approvalId: approvalId,
+            sessionId: sessionId,
+            tool: "ask_user_question",
+            command: nil,
+            decision: cancelled ? "cancelled" : "answered",
+            answers: rows,
+            notice: cancelled ? "已取消，等待 DSH 处理…" : "已提交回答，等待 DSH 处理…"
+        )
+    }
+
+    private func submitControl(
+        approvalId: String,
+        sessionId: String,
+        tool: String,
+        command: String?,
+        decision: String,
+        answers: [[String: Any]]?,
+        notice: String
+    ) -> Bool {
         guard let dir = controlDirectory else { return false }
         let tokenURL = dir.appendingPathComponent("token")
         guard let token = try? String(contentsOf: tokenURL, encoding: .utf8)
@@ -345,7 +421,7 @@ final class DemoStore: ObservableObject {
             approvalNotice = "审批控制未就绪（bridge 未连接）"
             return false
         }
-        let payload: [String: Any] = [
+        var payload: [String: Any] = [
             "schema": 1,
             "approvalId": approvalId,
             "sessionId": sessionId,
@@ -355,6 +431,7 @@ final class DemoStore: ObservableObject {
             "requestedAt": Int(Date().timeIntervalSince1970 * 1000),
             "token": token
         ]
+        if let answers { payload["answers"] = answers }
         do {
             try FileManager.default.createDirectory(
                 at: dir,
@@ -368,7 +445,7 @@ final class DemoStore: ObservableObject {
             try data.write(to: temporary, options: .atomic)
             try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: temporary.path)
             try FileManager.default.moveItem(at: temporary, to: final)
-            approvalNotice = "已发送，等待 DSH 处理…"
+            approvalNotice = notice
             return true
         } catch {
             approvalNotice = "发送失败：\(error.localizedDescription)"
@@ -379,6 +456,8 @@ final class DemoStore: ObservableObject {
     func applyLiveFeed(_ newAgents: [Agent], total: Int) {
         agents = newAgents
         liveTotal = max(total, newAgents.count)
+        feedMode = .live
+        protocolNote = nil
         if !isLive {
             isLive = true
             dlog("[agentbar] live feed attached: \(newAgents.count) agents")
@@ -386,7 +465,34 @@ final class DemoStore: ObservableObject {
         if bridgeNote != nil { bridgeNote = nil }
     }
 
+    func showProtocolMismatch(_ note: String, agents externalAgents: [Agent]) {
+        let changed = feedMode != .protocolMismatch || protocolNote != note
+        feedMode = .protocolMismatch
+        protocolNote = note
+        isLive = false
+        bridgeNote = nil
+        agents = externalAgents
+        usageTokensToday = nil
+        balanceText = nil
+        usageHistory = []
+        approvalNotice = nil
+        if changed { dlog("[agentbar] protocol mismatch: \(note)") }
+    }
+
+    func leaveProtocolMismatch() {
+        guard feedMode == .protocolMismatch else { return }
+        feedMode = .demo
+        protocolNote = nil
+        isLive = false
+        agents = demoSnapshot
+        usageTokensToday = demoUsageTokens
+        balanceText = demoBalance
+        usageHistory = demoHistory
+    }
+
     func markBridgeOffline(_ note: String) {
+        feedMode = .offline
+        protocolNote = nil
         if bridgeNote != note {
             bridgeNote = note
             dlog("[agentbar] bridge offline: \(note)")

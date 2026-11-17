@@ -10,19 +10,19 @@ The Swift app does not need to know anything about DSH: it polls
 `bridge/status.json` (or subscribes to `bridge/status.sock`) and renders
 the `agents` array.
 
-**The feed is read-only.** It never sends prompts, creates/deletes sessions,
+**The feed does not send prompts.** It never creates/deletes sessions,
 changes settings, or writes anything under `$DSH_HOME`. It calls DSH read
-endpoints and subscribes to its event stream. The one exception is the opt-in
-local **approval control channel** (§13): it can answer an already-pending
-`approval/request` with `allowed-once` / `rejected` via `$events/result`.
-Questions remain read-only.
+endpoints and subscribes to its event stream. The opt-in local **control
+channel** (§13) can answer an already-pending `approval/request` with
+`allowed-once` / `rejected`, and a supported `user-questions/request`, via
+`$events/result`. Question shapes that cannot be validated stay read-only.
 
 ---
 
 ## 1. Quick start
 
 ```bash
-cd agentbar/bridge
+cd agent-bar/bridge
 node dsh-bridge.mjs                 # foreground; Ctrl+C to stop
 # or a one-shot snapshot:
 node dsh-bridge.mjs --once
@@ -37,6 +37,8 @@ bridge/
   lib/dsh-auth.mjs      DSH home/secret discovery, cookie minting, GUI discovery
   lib/rpc.mjs           DSH Gateway unary RPC client (/api/<endpoint>)
   lib/translate.mjs     optional thoughtZh translation (DeepSeek chat API)
+  lib/questions.mjs     user-questions request shape and answer validation
+  lib/protocol.mjs      session/list probe: ok / mismatch / unavailable
   vendor/ws-mux.mjs     vendored zero-dependency RFC6455 + /api/remote.mux client
   tools/probe.mjs       read-only connectivity/diagnostic probe
   tools/asar-read.js    read-only reader for DSH's app.asar (endpoint research)
@@ -74,7 +76,7 @@ Options:
 Run it detached (example; no launchd needed):
 
 ```bash
-cd agentbar/bridge
+cd agent-bar/bridge
 nohup node dsh-bridge.mjs > /tmp/dsh-bridge.log 2>&1 &
 ```
 
@@ -306,17 +308,18 @@ re-discovery and it re-attaches automatically (5 s throttle).
   the feed is unaffected (one throttled status-only log line, no text/key).
 - External agents directory missing or unreadable: silently ignored; malformed,
   stale or unreadable report files are skipped without failing the tick.
-- No DSH writes except an explicit local approval answer (§13); the only shell-out is read-only `lsof`.
+- No DSH writes except an explicit local approval or supported question answer (§13); the only shell-out is read-only `lsof`.
 
 ---
 
 ## 5. Limitations / what is NOT possible
 
-- **Feed is read-only; approvals can be answered through an opt-in local
-  control channel.** The bridge never sends prompts or messages. A local
-  `control/` directory accepts a decision for an already-pending
-  `approval/request`; the bridge then posts `$events/result` (see §13).
-  Questions remain read-only. `--no-control` disables this entirely.
+- **The feed does not send prompts; approvals and supported questions can be
+  answered through an opt-in local control channel.** A local `control/`
+  directory accepts a decision for an already-pending `approval/request`, or a
+  supported `user-questions/request`; the bridge then posts `$events/result`
+  (see §13). Question shapes that fail validation stay read-only.
+  `--no-control` disables this entirely.
 - Current-tool granularity: derived by polling `session/page` every ~1.2 s for
   running/approval sessions. Between tool calls it is null (model thinking);
   a tool call shorter than the poll interval may be missed.
@@ -368,7 +371,7 @@ re-discovery and it re-attaches automatically (5 s throttle).
 ## 7. Verification log (exact commands, 2026-11-16)
 
 ```bash
-cd agentbar/bridge
+cd agent-bar/bridge
 
 # cookie minting + unary RPC (168 real sessions, 3 running)
 node dsh-bridge.mjs --once
@@ -569,7 +572,7 @@ and preserved by later heartbeats; `updatedAt` is always `Date.now()`. Fields
 not passed in are preserved, so a heartbeat can be one line.
 
 ```bash
-cd agentbar
+cd agent-bar
 
 # first report (creates the JSON + sets startedAt)
 node tools/agentbar-report.mjs \
@@ -607,7 +610,7 @@ integration:
 #!/bin/bash
 # codex-island.sh — run Codex with an Agent Bar heartbeat.
 set -u
-REPORT="node /path/to/agentbar/tools/agentbar-report.mjs"
+REPORT="node /path/to/agent-bar/tools/agentbar-report.mjs"
 ID="${AGENT_ISLAND_ID:-codex}"
 PROJECT="$(basename "$PWD")"
 
@@ -642,7 +645,7 @@ above or a `UserPromptSubmit` → `Stop` pair:
         "hooks": [
           {
             "type": "command",
-            "command": "node /path/to/agentbar/tools/agentbar-report.mjs --id claude-code --name 'Claude Code' --status running --tool 'Claude Code' >/dev/null"
+            "command": "node /path/to/agent-bar/tools/agentbar-report.mjs --id claude-code --name 'Claude Code' --status running --tool 'Claude Code' >/dev/null"
           }
         ]
       }
@@ -652,7 +655,7 @@ above or a `UserPromptSubmit` → `Stop` pair:
         "hooks": [
           {
             "type": "command",
-            "command": "node /path/to/agentbar/tools/agentbar-report.mjs --id claude-code --status done >/dev/null"
+            "command": "node /path/to/agent-bar/tools/agentbar-report.mjs --id claude-code --status done >/dev/null"
           }
         ]
       }
@@ -670,7 +673,7 @@ refresh `updatedAt` every 30–60 s while it works, then report `done` /
 ## 12. Verification log — v2 additions (2026-11-17)
 
 ```bash
-cd agentbar
+cd agent-bar
 
 # translation in a one-shot snapshot (key never printed)
 node bridge/dsh-bridge.mjs --once
@@ -711,12 +714,15 @@ This is the only code path that writes to DSH.
 - The bridge generates a fresh random 32-byte token on every start and writes it
   to `control/token` (0600). A request must include that token; comparisons use
   `crypto.timingSafeEqual`.
-- A request can only answer an **already pending** `approval/request` that this
-  bridge event stream received. It carries an approval id, decision, and
-  optional session id; the bridge rejects unknown/stale ids, session mismatches,
-  unsupported `user-questions/request`, bad tokens, and requests older than 60 s.
-- Decisions are limited to `allowed-once` and `rejected`. There is no way to
-  send a prompt, change a command, or select an arbitrary outcome.
+- A request can only answer an **already pending** event that this bridge
+  event stream received. It carries an event id, decision, and optional session
+  id; the bridge rejects unknown/stale ids, session mismatches, bad tokens, and
+  requests older than 60 s.
+- Approval decisions are `allowed-once` and `rejected`. Question decisions are
+  `answered` (value `{answers:[{id, selected, custom?}]}`, `selected` = option
+  labels) and `cancelled` (`UserQuestionError` / `ASK_CANCELLED`). Unknown
+  intents and other shapes that fail `buildQuestionResult` stay read-only.
+  There is no way to send a prompt or change a command.
 - Every attempt (ok, stale, bad token, offline, error) is appended to
   `audit.log` with timestamp, approval id, session id, tool, command, decision,
   and result. `audit.log` and the control token are 0600; the directory is 0700.
@@ -739,7 +745,9 @@ The notch App writes one JSON file atomically into `control/request-*.json`:
 }
 ```
 
-`decision` must be `allowed-once` or `rejected`. The bridge consumes at most
+`decision` must be `allowed-once` or `rejected` for an approval, or `answered`
+/ `cancelled` for a supported question. An `answered` request also carries
+`answers`. The bridge consumes at most
 four request files per tick, deletes handled files, and retries a file only
 while the event stream is offline (up to 15 s).
 
@@ -755,8 +763,10 @@ await this.events.answer({
 ```
 
 which posts `$events/result` with the event stream's `clientId` and `eventId`.
-The pending approval is removed locally; the next snapshot drops it and the
-DSH side resumes the agent.
+For an approval, `value` is the decision string. For a question, `value` is
+`{answers:[...]}` from `bridge/lib/questions.mjs`, or the cancel outcome is
+`{kind:'rejected', error:{name:'UserQuestionError', code:'ASK_CANCELLED', ...}}`.
+The pending item is removed locally; the next snapshot drops it.
 
 ### 13.4 Verification
 
@@ -770,6 +780,11 @@ Tested 2026-11-17 against DSH 0.2.2-rc.3 with a fresh `workspace-write` session:
 - a second request was rejected from the UI (`rejected`); audit recorded it and
   the agent observed the refusal.
 
-Known remaining gap: `user-questions/request` is still read-only and must be
-answered in the DSH GUI.
+Supported `user-questions/request` items can be answered from the panel.
+Shapes that `normalizeUserQuestions` marks `answerable: false` (unknown intent,
+duplicate labels, and similar) stay read-only and must be answered in the DSH GUI.
+
+If `session/list` is reached but its envelope, auth, or route does not match,
+`dsh.protocol` is `mismatch` and the menu-bar chip shows 协议不匹配 instead of
+falling back to simulated demo agents.
 
