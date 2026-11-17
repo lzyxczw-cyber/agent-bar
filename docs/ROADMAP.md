@@ -1,8 +1,9 @@
 # Agent Bar · 交接与下一步
 
-> 状态快照：**v0.4.1-dev**，2026-11-17，`main` 已含 CI、P0/P1/P2、桌面 adapter、拆分源文件和纯函数测试。
+> 状态快照：**v0.3.3** 公开版，2026-11-17。当前 `main` 从公开提交 `9186deb`（Initial public release: Agent Bar v0.3.3）起步。
+> 这一版已经包含 CI、P0/P1/P2、桌面 adapter、拆分后的 Swift 源文件和纯函数测试。bundle 版本见 `build.sh` 的 `CFBundleShortVersionString`：`0.3.3`。
 > 本机 `~/Documents` 的 File Provider 扩展属性会让本地 `codesign --verify` 失败（CI 不受影响）。
-> 这份文档就是换台电脑继续用的入口：看完这一页就能接手，不用翻聊天记录。
+> 这份文档按当前公开树校对，不沿用已删除仓库里的 v0.4.1-dev 说法。看完这一页就能接手。
 
 ---
 
@@ -34,7 +35,8 @@ ls ~/.dsh/.credentials.yaml   # 需要本机装过 DSH 并登录过（bridge 用
   - App 写 `~/Library/Application Support/AgentBar/bridge/control/request-*.json`（目录 0700、
     token 0600），bridge 校验 token / pending approval id / session 后调用
     `$events/result`（`events.answer`）。
-  - 只支持 `approval/request`；`user-questions/request` 仍只读。
+  - `approval/request` 回答 `allowed-once` / `rejected`。
+  - 能校验的 `user-questions/request` 也走同一通道：`answered` 的 value 是 `{answers:[{id, selected, custom?}]}`，`selected` 是选项 label；`cancelled` 发送 `UserQuestionError / ASK_CANCELLED`。未知 intent、重复 label 等无法校验的题保持只读。
   - 每条决定追加到 `bridge/audit.log`（0600）：时间、approvalId、sessionId、tool、command、decision、result。
   - `--no-control` 可关闭整条控制通道。
 - **已验收**：真实 Bash 提权审批 → 面板危险二次长按 → DSH 审批消失 → agent 继续执行 → 文件创建成功；
@@ -43,8 +45,8 @@ ls ~/.dsh/.credentials.yaml   # 需要本机装过 DSH 并登录过（bridge 用
   - 控制目录与 bridge 同用户信任域；token 可被同用户进程读取，不要跨用户共享 AppSupport。
   - 危险命令判定是启发式，不是完整安全边界。
   - 答复结果异步，UI 以审批卡片消失为准；失败看 `audit.log`。
-  - 仍缺 `ask_user_question` 的答复支持（当前打开 DSH 回答）。
-  - 需要补更系统的单测/集成测试（审批校验、token、审计、race）。
+  - 可校验的 `ask_user_question` 已能在面板回答；无法校验的题型仍打开 DSH。
+  - 需要补更系统的单测/集成测试（审批校验、token、审计、race）。布局、用量累加和 adapter 推断的单测仍未做。
 
 ### P1 · 小项（已完成 2026-11-17）
 
@@ -60,7 +62,7 @@ ls ~/.dsh/.credentials.yaml   # 需要本机装过 DSH 并登录过（bridge 用
 
 | 事项 | 结果 |
 |---|---|
-| 重拍截图 | ✅ settings（含预算/趋势）、panel-demo、bar-demo 已更新；其余截图在改版时按需重拍 |
+| 重拍截图 | 公开树的 `docs/` 里没有 `docs/*.png`。带本机桌面的截图不入库；这台环境不能运行 macOS App，所以没有补产品图 |
 | 签名 / 公证 | ✅ 已用 Developer ID 签名并通过 Apple 公证（Accepted + stapled）；签名凭据不入库，流程见 `docs/SIGNING.md` |
 | 用量拆分 / 趋势 / 预算 | ✅ 每个 agent 今日 tokens 显示在面板行；设置里 7 天 sparkline；每日 token 预算超限后右栏变橙并当天提醒 |
 | 外部 agent 一键接入 | ✅ Claude Code hooks 一键安装、Codex wrapper；✅ 本机桌面 adapter 已接 Codex（SQLite）、WorkBuddy（trace）、Grok Bot（persistence），App 自身和 `start.sh` 都会自动启动；支持同一 App 最多 3 个活跃会话；Hermes 仍为演示 |
@@ -78,16 +80,17 @@ ls ~/.dsh/.credentials.yaml   # 需要本机装过 DSH 并登录过（bridge 用
 - 天气单源 → open-meteo + wttr.in 双源 + 退避重试 + 全链路日志
 - 阴影被窗口裁切 → 改用系统窗口阴影
 - `main.swift` 3675 行单文件 → 拆成 Support / Models / Views / Chrome / AppDelegate + 5 行入口，多文件 `swiftc`
-- 零测试 → 纯函数测试 49 条（电池/天气/WWO 映射/token/网速/CJK/耗时）；CI 会跑 `./tests/run.sh`
+- 零测试 → `tests/main.swift` 里 136 个 Swift `check`，外加 `node --test tests/bridge-logic.test.mjs`（提问答案与协议探针）。CI 跑 `./tests/run.sh`
 
 **仍欠**：
 
 | 项 | 说明 | 建议 |
 |---|---|---|
-| 测试覆盖仍偏纯函数 | 布局帧计算、用量累加、adapter 状态推断还没单测 | 抽纯函数后补；布局用固定 CGRect 输入断言输出 |
-| `status.sh` 只匹配 bundle 路径 | 直接 `./AgentBar` 启动时会误报 not running | 改成按 `pgrep -f AgentBar` 匹配 |
-| bridge 与 DSH 内部协议硬耦合 | 自签 Cookie、mux 协议都是逆向来的，DSH 升级即失效 | 加版本探针，检测不到就在栏上显示「协议不匹配」而不是静默变演示模式 |
+| 测试覆盖仍偏纯函数 | 布局帧计算、用量累加、adapter 状态推断还没单测 | 留给后续版本；布局用固定 CGRect 输入断言输出 |
 | 面板 0.985 不透明度 | 亮背景下有 4/255 的透字 | 可接受；要纯净改 1.0 |
+| 自动更新、Hermes 实时 adapter、通知授权引导、外部 agent 可写审批、新 App 图标 | 不在这一版 | 后续版本再做 |
+
+已还掉的两项：`status.sh` 用 `pgrep -x AgentBar` / `pgrep -x agentbar` 识别进程，不再只匹配 bundle 路径；`session/list` 探针失败时 `dsh.protocol` 为 `mismatch`，栏上显示「协议不匹配」，不把演示数据当成实时数据。
 
 ---
 
@@ -125,7 +128,7 @@ otool -l agentbar | grep -A3 LC_BUILD_VERSION   # 期望 minos 14.0
 | 11-17 | **P2 大部分完成**：按 agent 用量/趋势/预算、Claude/Codex 一键 adapter、`package.sh` staging 签名 + DMG；Developer ID/公证待凭据 |
 | 11-17 | **本机桌面 adapter**：Codex（ChatGPT SQLite）、WorkBuddy（trace）、Grok Bot（sand persistence）接入，start.sh 自动启动 |
 | 11-17 | **adapter v2**：同一 App 最多 3 个活跃会话；脚本打包进 App，双击启动也会自动起 adapter；单例锁 + 退出清理 |
-| 11-17 | **工程化**：`main.swift` 拆成 Support/Models/Views/Chrome/AppDelegate；49 个纯函数测试；Homebrew cask + release workflow + 可选公证 |
+| 11-17 | **工程化**：Swift 源文件拆成 Support/Models/Views/Chrome/AppDelegate，`main.swift` 只负责启动；纯函数测试；Homebrew cask + release workflow + 可选公证 |
 | 11-17 | **签名/公证完成**：Developer ID 证书通过网页端创建（绕过 Xcode/API 的 Account Holder 误报）；API Key 公证 Accepted + staple；Gatekeeper 已接受 |
 | 11-17 | **adapter v3**：同一 App 多会话收成一个父行，选中展开子会话；↗/双击图标聚焦 App；设置里可看 adapter 日志、重启 watcher |
 | 11-17 | **天气城市搜索**：设置里输入城市名，经 Open-Meteo geocoding 选候选，自动写回经纬度并刷新；常用城市保留 |

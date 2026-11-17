@@ -141,5 +141,97 @@ check(
 check(agentIconFrameIndex(time: 1, interval: 0, frameCount: 4, phase: 0) == 0, "zero interval")
 check(agentIconFrameIndex(time: 1, interval: 0.70, frameCount: 0, phase: 0) == 0, "zero frames")
 
+// HTML is removed; markdown autolinks stay so the panel parser can see them.
+check(stripHTMLTags("<b>hi</b>") == "hi", "strip bold tag")
+check(stripHTMLTags("a <b class=\"x\">hi</b> b") == "a hi b", "strip attributed tag")
+check(stripHTMLTags("<script>alert(1)</script>") == "alert(1)", "strip script")
+check(stripHTMLTags("a < b") == "a < b", "keep bare less-than")
+check(stripHTMLTags("see <https://example.com>") == "see <https://example.com>", "keep autolink")
+check(stripHTMLTags("<br/>next") == "next", "strip br")
+
+let bold = inlineThoughtAttributed("see **bold** text")
+check(String(bold.characters) == "see bold text", "bold markers removed (\(String(bold.characters)))")
+check(bold.runs.contains { $0.inlinePresentationIntent?.contains(.stronglyEmphasized) == true }, "bold intent")
+let italic = inlineThoughtAttributed("an *italic* word")
+check(italic.runs.contains { $0.inlinePresentationIntent?.contains(.emphasized) == true }, "italic intent")
+let code = inlineThoughtAttributed("run `swift test` now")
+check(String(code.characters) == "run swift test now", "code markers removed")
+check(code.runs.contains { $0.inlinePresentationIntent?.contains(.code) == true }, "code intent")
+let link = inlineThoughtAttributed("[docs](https://example.com/agent)")
+check(link.runs.contains { $0.link?.absoluteString == "https://example.com/agent" }, "link attribute")
+let htmlThought = inlineThoughtAttributed("a <b>bold</b> tag")
+check(String(htmlThought.characters) == "a bold tag", "html stripped before markdown")
+check(!htmlThought.runs.contains { $0.inlinePresentationIntent?.contains(.stronglyEmphasized) == true }, "html is not bold")
+
+check(barModeLabel(.protocolMismatch) == "协议不匹配", "mismatch label")
+check(barModeLabel(.demo) == "演示", "demo label")
+check(
+    barFeedMode(protocolStatus: "mismatch", isLive: false, bridgeFresh: true, bridgeAlive: true, bridgeNote: nil) == .protocolMismatch,
+    "fresh mismatch is not demo"
+)
+check(
+    barFeedMode(protocolStatus: "mismatch", isLive: true, bridgeFresh: false, bridgeAlive: true, bridgeNote: nil) == .offline,
+    "stale mismatch does not count as a fresh probe"
+)
+check(
+    barFeedMode(protocolStatus: "unavailable", isLive: false, bridgeFresh: true, bridgeAlive: false, bridgeNote: nil) == .demo,
+    "missing DSH stays demo"
+)
+check(
+    barFeedMode(protocolStatus: "ok", isLive: true, bridgeFresh: true, bridgeAlive: true, bridgeNote: nil) == .live,
+    "healthy feed is live"
+)
+check(
+    barFeedMode(protocolStatus: "ok", isLive: true, bridgeFresh: true, bridgeAlive: true, bridgeNote: "暂无活跃任务") == .offline,
+    "bridge note is offline"
+)
+
+let single = AgentQuestion(
+    id: "q1", prompt: "放在哪里？", header: nil, detail: nil,
+    multiSelect: false, allowCustom: true, intent: nil,
+    options: [AgentQuestionOption(id: "q1#0", label: "刘海", detail: nil, display: nil)]
+)
+switch buildQuestionAnswers(questions: [single], selections: ["q1": ["刘海"]], customText: [:]) {
+case .success(let answers):
+    check(answers == [QuestionAnswer(id: "q1", selected: ["刘海"], custom: nil)], "single select answer")
+case .failure(let message):
+    check(false, "single select should succeed (\(message))")
+}
+switch buildQuestionAnswers(questions: [single], selections: [:], customText: ["q1": " 面板 "]) {
+case .success(let answers):
+    check(answers == [QuestionAnswer(id: "q1", selected: [], custom: "面板")], "custom answer")
+case .failure(let message):
+    check(false, "custom should succeed (\(message))")
+}
+switch buildQuestionAnswers(questions: [single], selections: ["q1": ["刘海"]], customText: ["q1": "面板"]) {
+case .success:
+    check(false, "single select plus custom must fail")
+case .failure:
+    check(true, "single select conflict")
+}
+let locked = AgentQuestion(
+    id: "perm", prompt: "Allow?", header: nil, detail: nil,
+    multiSelect: false, allowCustom: false, intent: "approval",
+    options: [AgentQuestionOption(id: "perm#0", label: "Allow", detail: nil, display: "允许")]
+)
+switch buildQuestionAnswers(questions: [locked], selections: [:], customText: ["perm": "no"]) {
+case .success:
+    check(false, "approval custom must fail")
+case .failure:
+    check(true, "approval custom rejected")
+}
+switch buildQuestionAnswers(questions: [locked], selections: ["perm": ["Allow"]], customText: [:]) {
+case .success(let answers):
+    check(answers.first?.selected == ["Allow"], "approval submits the wire label")
+case .failure(let message):
+    check(false, "approval option should succeed (\(message))")
+}
+switch buildQuestionAnswers(questions: [single], selections: [:], customText: [:]) {
+case .success:
+    check(false, "empty answer must fail")
+case .failure:
+    check(true, "empty answer rejected")
+}
+
 print("\(checks - failures)/\(checks) checks passed")
 exit(failures == 0 ? 0 : 1)

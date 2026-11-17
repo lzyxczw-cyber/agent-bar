@@ -7,7 +7,21 @@ FEED="$APP_SUPPORT/bridge/status.json"
 [ -f "$FEED" ] || FEED="bridge/status.json"
 
 echo "== app =="
-if pgrep -fl 'Agent Bar.app/Contents/MacOS/AgentBar'; then :; else echo "not running"; fi
+# Match the executable name, not the bundle path. `pgrep -x` is exact, so a
+# bridge path that merely contains "AgentBar" is not reported as the app.
+# Agent Bar.app's process name is AgentBar; ./agentbar (or ./run.sh) is agentbar.
+app_pids="$(
+  { pgrep -x AgentBar || true; pgrep -x agentbar || true; } | awk 'NF && !seen[$0]++'
+)"
+if [ -n "$app_pids" ]; then
+  while IFS= read -r pid; do
+    ps -p "$pid" -o pid=,command=
+  done <<EOF
+$app_pids
+EOF
+else
+  echo "not running"
+fi
 
 echo "== bridge =="
 if pgrep -fl 'AgentBar/bridge/dsh-bridge.mjs|agentbar/bridge/dsh-bridge.mjs'; then :; else echo "not running"; fi

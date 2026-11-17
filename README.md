@@ -2,7 +2,22 @@
 
 把 MacBook 刘海两侧（或顶栏）变成 AI agent 的实时状态区：像素风 app 图标 + 选中后展开的长胶囊，胶囊里显示**中文思考摘要**；点开面板可以看到**完整思考 + 执行过程时间线**。右侧靠刘海处是审批、实时 agent 数、**用量/余额**，最右侧是电量、Wi-Fi、天气、日期时间。设置与退出收进面板底部，点刘海向下展开。
 
-> 公开仓库不附带带本机桌面背景的截图，避免泄露私人窗口内容；截图可在本机运行 Demo 后自行生成。
+> **非官方。** Agent Bar 与 DeepSeek Harness（DSH）、Codex、Claude、Grok、WorkBuddy 没有隶属、合作或背书关系。对 DSH 的接入是读取本机凭据的非官方桥，随 DSH 版本可能失效。
+
+## 安装
+
+当前公开版本是 **v0.3.3**。
+
+- DMG：[GitHub Release v0.3.3](https://github.com/lzyxczw-cyber/agent-bar/releases/tag/v0.3.3)
+- Homebrew：仓库里的 cask 没有单独的 tap，它直接下载上面这个 Release 里的 DMG。在克隆下来的 `agent-bar` 目录执行：
+
+```bash
+brew install --cask ./Casks/agent-bar.rb
+```
+
+日常使用建议装这个已签名公证的 DMG。下面的 `./build.sh` 是从源码构建。
+
+> 公开仓库不附带带本机桌面背景的截图，避免泄露私人窗口内容。这台云环境也不能运行 macOS App，所以这里没有补产品截图。
 
 ## 左栏
 
@@ -41,7 +56,7 @@
 ## 思考与过程
 
 - bridge 会把每个 agent 的最新英文 reasoning 通过 **DeepSeek API** 翻译成简体中文，写入 `thoughtZh`；胶囊和面板优先显示中文，原文 `thought` 保留。
-- 面板「思考与过程」：完整中文思考（最多 8 行）+ 最近 8 个步骤（思考/工具/结果/回复 + 时间）。
+- 面板「思考与过程」：完整中文思考（最多 8 行）+ 最近 8 个步骤（思考/工具/结果/回复 + 时间）。思考正文渲染行内 Markdown（加粗、斜体、行内代码、系统支持的链接），不解析 HTML。胶囊摘要仍是单行纯文本。
 - 设置里可关闭「思考自动中文化」，关闭后显示英文原文。
 - 翻译 key 来自 `~/.dsh/.credentials.yaml` 的 `DEEPSEEK_API_KEY`（或环境变量），只用于请求头；不会打印/写入 status.json。翻译失败时回退原文。
 
@@ -56,7 +71,7 @@
   （目录 0700、token 文件 0600），bridge 校验 token + 仍在 pending 的 approval ID 后调用 DSH `$events/result`。
   只对**已存在的 approval** 作答，不会发 prompt、不会改命令。
 - 每次决定写入 `bridge/audit.log`（0600）：时间、approvalId、sessionId、tool、command、decision、result。
-- 问题（`ask_user_question`）仍只读，请用「打开 DSH 处理」。
+- 问题（`ask_user_question` / `user-questions/request`）可以在面板里回答：选项按 DSH 给出的 label 提交，允许自填的题可以写自定义文本，取消会发送 `ASK_CANCELLED`。无法安全校验的题型（未知 intent、重复选项等）保持只读，请用「打开 DSH 处理」。
 - 关闭控制通道：bridge `--no-control`。
 - 系统通知需要在「系统设置 → 通知 → Agent Bar」授权；未授权时仍会有提示音。正式 DMG 已 Developer ID 签名并公证；repo 内直接构建的 App 仍可能是 ad-hoc，建议安装 DMG 版本。
 
@@ -93,8 +108,8 @@
 
 ## 实时数据（DSH bridge + 外部 agent）
 
-`bridge/` 是本地 Node 桥（Node ≥20，无第三方依赖）。实时 feed 默认只读；另有一个**本机审批控制通道**，
-只允许对已经 pending 的 approval 回答 `allowed-once` / `rejected`。App 启动时同步到：
+`bridge/` 是本地 Node 桥（Node ≥20，无第三方依赖）。实时 feed 默认只读；另有一个**本机控制通道**，
+只允许回答已经 pending 的 `approval/request`（`allowed-once` / `rejected`）和能校验的 `user-questions/request`。App 启动时同步到：
 
 `~/Library/Application Support/AgentBar/bridge/`
 
@@ -103,8 +118,7 @@
 - 读取 `~/.dsh/.credentials.yaml` 的 browser-session secret，在内存中自签 DSH Web 会话 Cookie（不写 DSH 配置）；
 - session/list + session/page + WebSocket remote 事件流；
 - 输出 `status.json`（原子写 0600、变更即写 + 5s 心跳）；新增 `thoughtZh`、`external agents`、`bridge.translate` 等字段，详见 [bridge/README.md](bridge/README.md)；
-- 默认只读：能看到审批/提问；审批可通过本机 control 通道答复（见上方「通知与审批」），但不会发 prompt、
-  也不会代答问题；事件不离开本机（翻译请求除外，只发往 DeepSeek API 的 reasoning 文本）。
+- 能看到审批和提问。审批、以及能校验的提问，可通过本机 control 通道答复（见上方「通知与审批」）。不会发 prompt、不会改命令；事件不离开本机（翻译请求除外，只发往 DeepSeek API 的 reasoning 文本）。
 
 ### 一键接入（Claude Code / Codex）
 
@@ -160,7 +174,7 @@ App 退出后 adapter 会自动移除对应图标。
 
 | App / Agent | 实时状态 | 思考 / 过程 | 审批 |
 |---|---|---|---|
-| **DeepSeek Harness（DSH）** | ✅ 原生 bridge | ✅ | ✅ 双向（长按允许/拒绝） |
+| **DeepSeek Harness（DSH）** | ✅ 原生 bridge（非官方） | ✅ | ✅ 审批双向；可校验的提问可在面板回答 |
 | **Codex**（ChatGPT.app / CLI） | ✅ 桌面 App adapter（本地 SQLite）；CLI 另有 wrapper | ✅ 命令 / 文件 / reasoning | ❌ 只读，请在 Codex 内处理 |
 | **Claude Code** | ✅ hooks 一键安装 | ⚠️ 可上报 | ❌ 只读，请在 Claude Code 内处理 |
 | **WorkBuddy** | ✅ 本机 trace adapter | ✅ 当前 span（无自然语言 thought） | ❌ 只读 |
@@ -174,7 +188,7 @@ App 退出后 adapter 会自动移除对应图标。
 ## App 运行
 
 ```bash
-cd agentbar
+cd agent-bar
 ./build.sh        # 编译 + 打包 Agent Bar.app
 ./start.sh        # 同步 bridge 到 Application Support 并启动
 # 直接双击 Agent Bar.app 也可以：bridge 和本机 App adapter 都会自动启动
@@ -182,7 +196,7 @@ cd agentbar
 ./stop.sh         # 停止 App 与 bridge
 ```
 
-不修改系统设置；退出后原生菜单栏立即恢复。演示模式（bridge 不可用）内置 5 个 agent 和一条演示审批；右栏 chip 显示 `演示/实时/离线`。
+不修改系统设置；退出后原生菜单栏立即恢复。演示模式只在确实没有实时数据时使用（bridge 没连上、或还没发现 DSH），内置 5 个 agent 和一条演示审批。右栏 chip 显示 `演示` / `实时` / `离线`。若已经发现 DSH，但 `session/list` 的协议对不上，chip 和面板显示 **协议不匹配**，不会改回演示数据。
 
 ## 实现要点
 
@@ -197,11 +211,11 @@ cd agentbar
 - 主线程卡死 >20s 自动退出，避免菜单栏一直被盖住（退出前先杀掉 bridge，否则 `exit(0)` 绕过
   `applicationWillTerminate` 会留下一个空转的 bridge）。
 - 光标监听做 8ms 节流；日志超过 2MB 时启动轮转到 `/tmp/agentbar.log.1`。
-- 减少动态效果：不撒粒子，只保留淡入/淡出。
+- 选中图标时仍会撒一小圈粒子（`BurstOverlay`）。系统开启「减弱动态效果」后不再撒粒子，只保留淡入/淡出。应用内没有单独的粒子开关。
 
 ## 已知限制
 
-- 审批控制通道只支持 `approval/request`，不支持 `ask_user_question`（问题仍只读）；答复异步，以审批卡片消失为准，
+- 审批控制通道支持 `approval/request`（`allowed-once` / `rejected`），以及能校验的 `user-questions/request`（`answers[].selected` 为选项 label，可选 `custom`；取消为 `ASK_CANCELLED`）。答复异步，以卡片消失为准，
   失败可在 `bridge/audit.log` 查看；控制通道与 bridge 同属当前用户信任域，token 文件 0600，不要跨用户共享 AppSupport。
 - 危险命令判定是启发式（`danger-full-access`、`rm -rf`、`sudo` 等），不是完整安全边界。
 - 余额只取主钱包；不显示按模型拆分消耗。
@@ -211,7 +225,7 @@ cd agentbar
 - 天气有两个源：open-meteo 优先，失败自动回落 wttr.in（wetter 代码已映射到 WMO）；都失败时按退避重试并显示 `--°`。
 - 思考翻译依赖 DeepSeek API key 与网络；失败回退英文原文。
 - 系统通知需在系统设置授权；本机 `~/Documents` 的 File Provider 仍可能让 repo 内 App 的本地签名校验失败，建议安装已公证的 DMG 内 App。
-- 实时数据只验证 DSH 0.2.2-rc.3；其他 agent 走外部上报协议。
+- 实时数据按 DSH 0.2.2-rc.3 的 `session/list` 与 `$events` 实现。探针发现协议对不上时，栏上显示「协议不匹配」，而不是静默回到演示数据。其他 agent 走外部上报协议。
 - 本机桌面 adapter 读 App 的本地数据，状态是推断：Codex 取最近的 `inProgress` turn，WorkBuddy 取未结束 trace，Grok Bot 取 streaming/未返回请求；每个 App 最多显示 3 个活跃会话；App 关闭后 adapter 会自动清掉对应图标。
 - 外部 agent 图标见上文「图标」：128×128 PNG 由系统缩小到栏 18 pt、面板 26 pt。Claude 有专用图标；未知名称用 generic，不再占用 Codex / Grok / WorkBuddy / DSH / Claude。
 - 多显示器已验证：设置里可选主屏或任意 `NSScreen`，外接 1280×720 屏切换正常；全屏 Space 下顶部条和面板均可见（测试 App 验证）；真机刘海仍需 MacBook 验证。
@@ -264,7 +278,7 @@ NOTARIZE=1 NOTARY_PROFILE="agentbar-notary" ./package.sh
 ## 目录
 
 ```
-agentbar/
+agent-bar/
 ├── Resources/agents/      确认稿 128×128 PNG 与 manifest.json
 ├── main.swift             入口（NSApplication 启动）
 ├── Support.swift          纯工具 / 格式化 / 布局 FramePreferenceKey
@@ -275,7 +289,7 @@ agentbar/
 ├── bridge/                DSH 桥（feed 只读 + 审批控制）+ translate + 外部 agent 合并
 ├── tools/                 agentbar-report.mjs、adapter 安装/本机 App watcher、鼠标/键盘自动化
 ├── tests/                 纯函数测试（./tests/run.sh）
-├── docs/                  截图 + ROADMAP.md（交接与下一步）+ SIGNING.md（签名/公证排查）
+├── docs/                  ROADMAP.md（交接与下一步）+ SIGNING.md（签名/公证排查）；公开树里没有产品截图
 ├── Casks/                 Homebrew cask
 ├── .github/workflows/     CI + tag release（DMG + cask checksum）
 ├── build.sh / start.sh / stop.sh / status.sh / package.sh
@@ -285,13 +299,16 @@ agentbar/
 运行数据：`~/Library/Application Support/AgentBar/{bridge,agents}/`；审批审计：`.../bridge/audit.log`；
 日志：`/tmp/agentbar.log`、`/tmp/agentbar-bridge.log`。
 
-## Roadmap
+## 接下来
 
-- 双向审批（hold-to-confirm + 上下文 + 审计）
-- 更多 agent adapter 内置（Claude Code/Codex 一键安装）
-- 真机刘海、多显示器、全屏适配
-- 通知授权引导、签名公证、自动更新
-- 用量趋势/预算提醒、按 agent 成本拆分
+双向审批、Claude Code / Codex 一键接入、本机桌面 adapter、多显示器、用量趋势和签名公证都已经在 v0.3.3 里。还没做、留给后续版本的是：
+
+- 自动更新
+- 外部 agent 可在栏里作答的审批
+- Hermes 实时 adapter
+- 通知授权引导
+- 布局、用量累加、adapter 推断的更多单测
+- 新的 App 图标
 
 ## 许可与权利声明
 

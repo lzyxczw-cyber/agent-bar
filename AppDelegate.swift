@@ -440,6 +440,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             guard let pid = feed.bridge?.pid else { return false }
             return kill(pid_t(pid), 0) == 0
         }()
+        let presentation = barFeedMode(
+            protocolStatus: feed.dsh?.protocolStatus,
+            isLive: store.isLive,
+            bridgeFresh: fresh,
+            bridgeAlive: bridgeAlive,
+            bridgeNote: store.bridgeNote
+        )
+        if presentation == .protocolMismatch {
+            let external = (feed.agents ?? []).filter { $0.external == true }.map { mapLiveAgent($0) }
+            let note = feed.dsh?.protocolError ?? feed.dsh?.error ?? "DSH 的 session/list 与当前桥不一致"
+            store.showProtocolMismatch(note, agents: external)
+            return
+        }
+        if store.feedMode == .protocolMismatch {
+            store.leaveProtocolMismatch()
+        }
 
         if fresh && connected && bridgeAlive, let liveAgents = feed.agents, !liveAgents.isEmpty {
             let mapped = liveAgents.map { mapLiveAgent($0) }
@@ -502,6 +518,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         default: status = .done
         }
         let firstApproval = live.approvals?.first
+        let questions = mapQuestions(firstApproval?.questions)
         let tool: String
         if let t = live.tool, !t.isEmpty {
             tool = t
@@ -559,8 +576,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             tokensToday: live.tokensToday,
             isExternal: live.external == true,
             sessions: sessions,
-            appBundleID: live.appBundleID
+            appBundleID: live.appBundleID,
+            approvalKind: firstApproval?.kind,
+            questions: questions,
+            questionAnswerable: firstApproval?.kind == "question" && firstApproval?.answerable == true && !questions.isEmpty
         )
+    }
+
+    private func mapQuestions(_ dtos: [LiveFeed.QuestionDTO]?) -> [AgentQuestion] {
+        guard let dtos else { return [] }
+        return dtos.compactMap { dto in
+            guard let id = dto.id, let prompt = dto.question, !id.isEmpty, !prompt.isEmpty else { return nil }
+            let options = (dto.options ?? []).enumerated().compactMap { index, option -> AgentQuestionOption? in
+                guard let label = option.label, !label.isEmpty else { return nil }
+                return AgentQuestionOption(id: "\(id)#\(index)", label: label, detail: option.description, display: option.display)
+            }
+            return AgentQuestion(
+                id: id,
+                prompt: prompt,
+                header: dto.header,
+                detail: dto.detail,
+                multiSelect: dto.multiSelect == true,
+                allowCustom: dto.allowCustom == true,
+                intent: dto.intent,
+                options: options
+            )
+        }
     }
 
     // MARK: Bridge autostart (optional; disabled with --no-bridge)
