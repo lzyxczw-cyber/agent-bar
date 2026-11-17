@@ -239,32 +239,36 @@ struct QuestionAnswer: Equatable {
     let custom: String?
 }
 
+struct QuestionAnswerError: Error, Equatable {
+    let message: String
+}
+
 /// Client-side check matching bridge/lib/questions.mjs. Labels, not display text, are submitted.
 func buildQuestionAnswers(
     questions: [AgentQuestion],
     selections: [String: Set<String>],
     customText: [String: String]
-) -> Result<[QuestionAnswer], String> {
-    guard !questions.isEmpty else { return .failure("没有可回答的问题") }
+) -> Result<[QuestionAnswer], QuestionAnswerError> {
+    guard !questions.isEmpty else { return .failure(QuestionAnswerError(message: "没有可回答的问题")) }
     var answers: [QuestionAnswer] = []
     for question in questions {
         let chosen = selections[question.id] ?? []
         let allowed = Set(question.options.map(\.label))
         if !chosen.isSubset(of: allowed) {
-            return .failure("选项已变化，请重新选择")
+            return .failure(QuestionAnswerError(message: "选项已变化，请重新选择"))
         }
         let selected = question.options.map(\.label).filter { chosen.contains($0) }
         let rawCustom = customText[question.id]?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        if rawCustom.count > 2000 { return .failure("回答太长") }
+        if rawCustom.count > 2000 { return .failure(QuestionAnswerError(message: "回答太长")) }
         let custom = rawCustom.isEmpty ? nil : rawCustom
         if custom != nil && !question.allowCustom {
-            return .failure("这道题只能选择给出的选项")
+            return .failure(QuestionAnswerError(message: "这道题只能选择给出的选项"))
         }
         if !question.multiSelect && (selected.count > 1 || (!selected.isEmpty && custom != nil)) {
-            return .failure("单选题请选择一项，或只填写自定义回答")
+            return .failure(QuestionAnswerError(message: "单选题请选择一项，或只填写自定义回答"))
         }
         if selected.isEmpty && custom == nil {
-            return .failure("请回答所有问题")
+            return .failure(QuestionAnswerError(message: "请回答所有问题"))
         }
         answers.append(QuestionAnswer(id: question.id, selected: selected, custom: custom))
     }

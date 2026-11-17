@@ -1801,8 +1801,8 @@ struct PanelView: View {
             return
         }
         switch buildQuestionAnswers(questions: agent.questions, selections: questionSelections, customText: questionCustom) {
-        case .failure(let message):
-            store.approvalNotice = message
+        case .failure(let error):
+            store.approvalNotice = error.message
         case .success(let answers):
             _ = store.submitQuestion(approvalId: approvalId, sessionId: agent.id, answers: answers, cancelled: false)
         }

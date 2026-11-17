@@ -194,14 +194,14 @@ let single = AgentQuestion(
 switch buildQuestionAnswers(questions: [single], selections: ["q1": ["刘海"]], customText: [:]) {
 case .success(let answers):
     check(answers == [QuestionAnswer(id: "q1", selected: ["刘海"], custom: nil)], "single select answer")
-case .failure(let message):
-    check(false, "single select should succeed (\(message))")
+case .failure(let error):
+    check(false, "single select should succeed (\(error.message))")
 }
 switch buildQuestionAnswers(questions: [single], selections: [:], customText: ["q1": " 面板 "]) {
 case .success(let answers):
     check(answers == [QuestionAnswer(id: "q1", selected: [], custom: "面板")], "custom answer")
-case .failure(let message):
-    check(false, "custom should succeed (\(message))")
+case .failure(let error):
+    check(false, "custom should succeed (\(error.message))")
 }
 switch buildQuestionAnswers(questions: [single], selections: ["q1": ["刘海"]], customText: ["q1": "面板"]) {
 case .success:
@@ -223,14 +223,14 @@ case .failure:
 switch buildQuestionAnswers(questions: [locked], selections: ["perm": ["Allow"]], customText: [:]) {
 case .success(let answers):
     check(answers.first?.selected == ["Allow"], "approval submits the wire label")
-case .failure(let message):
-    check(false, "approval option should succeed (\(message))")
+case .failure(let error):
+    check(false, "approval option should succeed (\(error.message))")
 }
 switch buildQuestionAnswers(questions: [single], selections: [:], customText: [:]) {
 case .success:
     check(false, "empty answer must fail")
-case .failure:
-    check(true, "empty answer rejected")
+case .failure(let error):
+    check(error.message == "请回答所有问题", "empty answer message (\(error.message))")
 }
 
 print("\(checks - failures)/\(checks) checks passed")
