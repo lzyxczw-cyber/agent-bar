@@ -241,7 +241,7 @@ final class DemoStore: ObservableObject {
     private let waitPool = ["Bash: swift build --configuration release", "Edit Sources/NotchDemo.swift", "Bash: clean build artifacts"]
 
     init() {
-        agents = [
+        let seeded: [Agent] = [
             Agent(id: UUID().uuidString, name: "DeepSeek Harness", project: "deepseek-harness", tool: "tools.run_code",
                   status: .running, startedAt: Date().addingTimeInterval(-42), approvalCommand: nil, note: nil,
                   thought: "正在把思考详情与用量余额接入胶囊：先解析 bridge 的最新事件，再把 reasoning 摘要显示到胶囊尾部。",
@@ -287,7 +287,8 @@ final class DemoStore: ObservableObject {
                   ],
                   tokens: 32_100, tokensToday: 8_400),
         ]
-        demoSnapshot = agents
+        agents = seeded
+        demoSnapshot = seeded
 
         let t = Timer(timeInterval: 1.0, repeats: true) { [weak self] _ in self?.step() }
         RunLoop.main.add(t, forMode: .common)
