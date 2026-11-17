@@ -1,7 +1,7 @@
 # Agent Bar · 交接与下一步
 
-> 状态快照：**v0.3.4** 公开版，2026-11-17。当前 `main` 已从公开初始提交 `9186deb` 起步，并合并 PR #1（协议不匹配、问题答复、文档对齐）。
-> 这一版已经包含 CI、P0/P1/P2、桌面 adapter、拆分后的 Swift 源文件、纯函数与 Node bridge 测试。bundle 版本见 `build.sh` 的 `CFBundleShortVersionString`：`0.3.4`。
+> 状态快照：**v0.3.5**，2026-11-17。当前 `main` 已从公开初始提交 `9186deb` 起步，并合并 PR #1（协议不匹配、问题答复、文档对齐）。v0.3.5 在其上加了 GitHub Release 更新检查和通知授权引导，尚未打 tag。
+> 这一版已经包含 CI、P0/P1/P2、桌面 adapter、拆分后的 Swift 源文件、纯函数与 Node bridge 测试。bundle 版本见 `build.sh` 的 `CFBundleShortVersionString` / `CFBundleVersion`：`0.3.5`。
 > 本机 `~/Documents` 的 File Provider 扩展属性会让本地 `codesign --verify` 失败（CI 不受影响）。
 > 这份文档按当前公开树校对，不沿用已删除仓库里的 v0.4.1-dev 说法。看完这一页就能接手。
 
@@ -80,7 +80,7 @@ ls ~/.dsh/.credentials.yaml   # 需要本机装过 DSH 并登录过（bridge 用
 - 天气单源 → open-meteo + wttr.in 双源 + 退避重试 + 全链路日志
 - 阴影被窗口裁切 → 改用系统窗口阴影
 - `main.swift` 3675 行单文件 → 拆成 Support / Models / Views / Chrome / AppDelegate + 5 行入口，多文件 `swiftc`
-- 零测试 → `tests/main.swift` 里 136 个 Swift `check`，外加 `node --test tests/bridge-logic.test.mjs`（提问答案与协议探针）。CI 跑 `./tests/run.sh`
+- 零测试 → `tests/main.swift` 里的 Swift `check`（含版本比较、更新提示和通知引导），外加 `node --test tests/bridge-logic.test.mjs`（提问答案与协议探针）。CI 跑 `./tests/run.sh`
 
 **仍欠**：
 
@@ -88,7 +88,7 @@ ls ~/.dsh/.credentials.yaml   # 需要本机装过 DSH 并登录过（bridge 用
 |---|---|---|
 | 测试覆盖仍偏纯函数 | 布局帧计算、用量累加、adapter 状态推断还没单测 | 留给后续版本；布局用固定 CGRect 输入断言输出 |
 | 面板 0.985 不透明度 | 亮背景下有 4/255 的透字 | 可接受；要纯净改 1.0 |
-| 自动更新、Hermes 实时 adapter、通知授权引导、外部 agent 可写审批、新 App 图标 | 不在这一版 | 后续版本再做 |
+| Hermes 实时 adapter、外部 agent 可写审批、布局/用量/adapter 单测、新 App 图标 | 不在 v0.3.5 | 后续版本再做 |
 
 已还掉的两项：`status.sh` 用 `pgrep -x AgentBar` / `pgrep -x agentbar` 识别进程，不再只匹配 bundle 路径；`session/list` 探针失败时 `dsh.protocol` 为 `mismatch`，栏上显示「协议不匹配」，不把演示数据当成实时数据。
 
@@ -119,10 +119,16 @@ otool -l agentbar | grep -A3 LC_BUILD_VERSION   # 期望 minos 14.0
 
 ---
 
+## 4b. v0.3.5 已完成
+
+- **自动更新**：只读 GitHub `releases/latest`，和 bundle 短版本比较。有更新时栏上和面板提示，用户自己打开官方 DMG 或发布页。没有 Sparkle，没有新的 Homebrew tap，不会覆盖正在运行的 App。失败只出现在设置里。忽略针对单个版本，稍后是 24 小时。自动检查间隔 6 小时。
+- **通知授权引导**：未决定时面板里一张卡片，用户点了才请求系统授权；已拒绝时引导到系统设置。两种卡片都可以关掉，之后不再反复出现。设置页保留入口。未授权时继续只播放提示音。
+
 ## 5. 最近完成（时间线）
 
 | 日期 | 内容 |
 |---|---|
+| 11-17 | **v0.3.5**：GitHub Release 更新检查（不自动安装）+ 通知授权引导 |
 | 11-17 | **P0 审批双向落地**：本机控制通道 + token + 审计 + 400ms 长按 + 危险命令二次确认；真实允许/拒绝验收通过 |
 | 11-17 | **P1 完成**：天气城市设置、多显示器选择、全屏 Space 实测、+N 点击、网速空闲淡出 |
 | 11-17 | **P2 大部分完成**：按 agent 用量/趋势/预算、Claude/Codex 一键 adapter、`package.sh` staging 签名 + DMG；Developer ID/公证待凭据 |

@@ -6,10 +6,10 @@
 
 ## 安装
 
-当前公开版本是 **v0.3.4**。
+这棵源码的 bundle 版本是 **v0.3.5**。已经打过 tag 的安装包仍是 [GitHub Release v0.3.4](https://github.com/lzyxczw-cyber/agent-bar/releases/tag/v0.3.4)；`v0.3.5` 的 DMG 要等下次打 `v*` tag 才会出现在 Releases 里。应用内更新检查看的是这个 Release，不会提前假设还没发布的包。
 
-- DMG：[GitHub Release v0.3.4](https://github.com/lzyxczw-cyber/agent-bar/releases/tag/v0.3.4)
-- Homebrew：仓库里的 cask 没有单独的 tap，它直接下载上面这个 Release 里的 DMG。在克隆下来的 `agent-bar` 目录执行：
+- DMG：上面的 v0.3.4 Release（当前已发布的安装包）
+- Homebrew：仓库里的 cask 没有单独的 tap，它直接下载已发布 Release 里的 DMG。在克隆下来的 `agent-bar` 目录执行：
 
 ```bash
 brew install --cask ./Casks/agent-bar.rb
@@ -73,7 +73,22 @@ brew install --cask ./Casks/agent-bar.rb
 - 每次决定写入 `bridge/audit.log`（0600）：时间、approvalId、sessionId、tool、command、decision、result。
 - 问题（`ask_user_question` / `user-questions/request`）可以在面板里回答：选项按 DSH 给出的 label 提交，允许自填的题可以写自定义文本，取消会发送 `ASK_CANCELLED`。无法安全校验的题型（未知 intent、重复选项等）保持只读，请用「打开 DSH 处理」。
 - 关闭控制通道：bridge `--no-control`。
-- 系统通知需要在「系统设置 → 通知 → Agent Bar」授权；未授权时仍会有提示音。正式 DMG 已 Developer ID 签名并公证；repo 内直接构建的 App 仍可能是 ad-hoc，建议安装 DMG 版本。
+- 系统通知需要在「系统设置 → 通知 → Agent Bar」授权；未授权时仍会有提示音。
+- 还没有授权时，面板里会出现一次说明：可以点「允许通知」拉起系统对话框，或点「以后再说」关掉这张卡片。系统已经拒绝时，卡片改为引导打开「系统设置 → 通知 → Agent Bar」，点「知道了」后不再反复出现。设置页始终可以再请求授权或打开系统设置。应用不会在每次启动时自己弹出系统授权框。
+- 正式 DMG 已 Developer ID 签名并公证；repo 内直接构建的 App 仍可能是 ad-hoc，建议安装 DMG 版本。
+
+## 自动更新
+
+应用启动约 20 秒后，以及之后每 6 小时，会请求一次
+`https://api.github.com/repos/lzyxczw-cyber/agent-bar/releases/latest`，
+把稳定版 tag 和本机 `CFBundleShortVersionString` 比较。
+
+- 已是最新、或本机版本更高：设置里显示已是最新，栏上不提示。
+- 有更新：栏上出现「有更新」，面板和设置里可以**下载官方 DMG** 或打开 GitHub 发布页。DMG 地址必须与 cask 使用的
+  `Agent-Bar-<version>.dmg` 完全一致，否则只给发布页。安装由用户自己完成，**不会覆盖正在运行的 App**。
+- 检查失败（网络、限流、无法解析）：只写在设置里，不在栏上反复提示。
+- 「稍后」把这个版本静音 24 小时；「忽略」不再提示这一个版本。下一个更高版本仍会再提示。
+- 预发布和 draft 不当作可安装更新。没有接 Sparkle，也没有另外做一个 Homebrew tap。
 
 ## 用量、预算与趋势
 
@@ -224,7 +239,7 @@ cd agent-bar
   基线存 `bridge/usage-state.json`，跨重启/跨零点不会重复累加。
 - 天气有两个源：open-meteo 优先，失败自动回落 wttr.in（wetter 代码已映射到 WMO）；都失败时按退避重试并显示 `--°`。
 - 思考翻译依赖 DeepSeek API key 与网络；失败回退英文原文。
-- 系统通知需在系统设置授权；本机 `~/Documents` 的 File Provider 仍可能让 repo 内 App 的本地签名校验失败，建议安装已公证的 DMG 内 App。
+- 系统通知需在系统设置授权。未授权时面板会提示一次，之后只在设置里保留入口；提示音一直保留。本机 `~/Documents` 的 File Provider 仍可能让 repo 内 App 的本地签名校验失败，建议安装已公证的 DMG 内 App。
 - 实时数据按 DSH 0.2.2-rc.3 的 `session/list` 与 `$events` 实现。探针发现协议对不上时，栏上显示「协议不匹配」，而不是静默回到演示数据。其他 agent 走外部上报协议。
 - 本机桌面 adapter 读 App 的本地数据，状态是推断：Codex 取最近的 `inProgress` turn，WorkBuddy 取未结束 trace，Grok Bot 取 streaming/未返回请求；每个 App 最多显示 3 个活跃会话；App 关闭后 adapter 会自动清掉对应图标。
 - 外部 agent 图标见上文「图标」：128×128 PNG 由系统缩小到栏 18 pt、面板 26 pt。Claude 有专用图标；未知名称用 generic，不再占用 Codex / Grok / WorkBuddy / DSH / Claude。
@@ -234,7 +249,7 @@ cd agent-bar
 ## 打包与签名
 
 ```bash
-./package.sh                                  # ad-hoc DMG: Agent-Bar-0.3.4.dmg
+./package.sh                                  # ad-hoc DMG: Agent-Bar-<bundle version>.dmg
 CODESIGN_IDENTITY="Developer ID Application: ..." ./package.sh   # Developer ID 签名
 # 推荐：App Store Connect API Key（本机已配置）
 CODESIGN_IDENTITY="..." CODESIGN_KEYCHAIN="$HOME/Library/Keychains/agentbar-signing.keychain-db" \
@@ -247,11 +262,11 @@ NOTARIZE=1 NOTARY_PROFILE="agentbar-notary" ./package.sh
 
 - `package.sh` 会在 `/tmp` 里的 staging 目录重新签名再打 DMG，绕开 `~/Documents` 的 File Provider
   扩展属性问题，DMG 内的 App 签名是有效的。
-- **Developer ID / 公证（已完成）**：`Agent-Bar-0.3.4.dmg` 已用
-  已用 Developer ID 签名并公证（Accepted + stapled），
+- **Developer ID / 公证（已完成）**：已发布的 `Agent-Bar-0.3.4.dmg` 已用
+  Developer ID 签名并公证（Accepted + stapled），
   Gatekeeper 显示 `source=Notarized Developer ID`。签名/公证流水线见
-  [docs/SIGNING.md](docs/SIGNING.md)。
-- **Homebrew**：`Casks/agent-bar.rb` 已按 0.3.4 生成；`v*` tag 的 release workflow 会构建 DMG、
+  [docs/SIGNING.md](docs/SIGNING.md)。源码版本升到 0.3.5 之后，新的 DMG 要等下一次 `v*` tag。
+- **Homebrew**：`Casks/agent-bar.rb` 仍指向已发布的 0.3.4 DMG；`v*` tag 的 release workflow 会构建 DMG、
   用 `tools/update-cask.sh` 自动回写 cask 校验和并上传 release。公开仓库后：
   ```bash
   brew install --cask ./Casks/agent-bar.rb
@@ -286,6 +301,7 @@ agent-bar/
 ├── Views.swift            SwiftUI 顶部栏、面板、审批、设置
 ├── Chrome.swift           BarContainerView / IslandPanel
 ├── AppDelegate.swift      窗口、feed、审批、adapter 自启动
+├── ReleaseUpdate.swift    GitHub Release 检查与通知授权状态
 ├── bridge/                DSH 桥（feed 只读 + 审批控制）+ translate + 外部 agent 合并
 ├── tools/                 agentbar-report.mjs、adapter 安装/本机 App watcher、鼠标/键盘自动化
 ├── tests/                 纯函数测试（./tests/run.sh）
@@ -301,12 +317,10 @@ agent-bar/
 
 ## 接下来
 
-双向审批、Claude Code / Codex 一键接入、本机桌面 adapter、多显示器、用量趋势和签名公证都已经在 v0.3.4 里。还没做、留给后续版本的是：
+双向审批、Claude Code / Codex 一键接入、本机桌面 adapter、多显示器、用量趋势和签名公证都已经在 v0.3.4 里。v0.3.5 加上了 GitHub Release 更新检查和通知授权引导。还没做、留给后续版本的是：
 
-- 自动更新
 - 外部 agent 可在栏里作答的审批
 - Hermes 实时 adapter
-- 通知授权引导
 - 布局、用量累加、adapter 推断的更多单测
 - 新的 App 图标
 

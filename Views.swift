@@ -812,6 +812,7 @@ struct BarView: View {
     @ObservedObject var ui: UIModel
     @ObservedObject var sys: SystemStatus
     let net: NetSpeed
+    @ObservedObject var updates: UpdateCenter
     @AppStorage("AgentBarDailyTokenBudget") private var dailyTokenBudget = 0.0
 
     @Namespace private var railNamespace
@@ -1010,6 +1011,21 @@ struct BarView: View {
         .help(mode == .protocolMismatch ? (store.protocolNote ?? "DSH 协议不匹配") : barModeLabel(mode))
     }
 
+    private var updateChip: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "arrow.down.circle.fill")
+                .font(.system(size: 9, weight: .bold))
+            Text("有更新")
+                .font(.system(size: 11, weight: .semibold))
+        }
+        .foregroundStyle(Color(red: 0.55, green: 0.86, blue: 1.0))
+        .padding(.horizontal, 8)
+        .padding(.vertical, 3)
+        .background(Capsule().fill(Color(red: 0.45, green: 0.75, blue: 1.0).opacity(0.16)))
+        .overlay(Capsule().strokeBorder(Color(red: 0.55, green: 0.86, blue: 1.0).opacity(0.35), lineWidth: 0.5))
+        .help("发现新版本。点开面板可下载官方 DMG，不会自动覆盖正在运行的 App")
+    }
+
     private var agentCountText: String {
         switch store.feedMode {
         case .protocolMismatch:
@@ -1050,6 +1066,9 @@ struct BarView: View {
             // AI-related info: left-aligned in the right wing, nearest the notch
             if store.waitingCount > 0 {
                 approvalBadge
+            }
+            if case .available = updates.banner() {
+                updateChip
             }
             liveChip
             Text(agentCountText)
@@ -1260,6 +1279,8 @@ struct PanelView: View {
     let onOpenApp: (String) -> Void
     let onOpenAdapterLog: () -> Void
     let onRestartAdapters: () -> Void
+    @ObservedObject var updates: UpdateCenter
+    @ObservedObject var notificationAuth: NotificationAuthCenter
 
     @AppStorage("AgentBarLatitude") private var weatherLatitude: Double = 31.2304
     @AppStorage("AgentBarLongitude") private var weatherLongitude: Double = 121.4737
@@ -1286,6 +1307,8 @@ struct PanelView: View {
     @State private var questionCustom: [String: String] = [:]
     @AppStorage("AgentBarNotificationsEnabled") private var notificationsEnabled = true
     @AppStorage("AgentBarShowChineseThought") private var showChineseThought = true
+    @AppStorage("AgentBarNotificationPromptDismissed") private var notificationPromptDismissed = false
+    @AppStorage("AgentBarNotificationSettingsHintDismissed") private var notificationSettingsHintDismissed = false
 
     private var appVersion: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev"
@@ -1410,6 +1433,8 @@ struct PanelView: View {
                         if store.feedMode == .protocolMismatch {
                             protocolBanner
                         }
+                        updateBannerCard
+                        notificationGuideCard
                         let waiting = store.waitingAgents
                         ForEach(waiting.prefix(3)) { agent in
                             approvalCard(agent)
@@ -1742,6 +1767,149 @@ struct PanelView: View {
         case .offline: return Color(red: 1.0, green: 0.75, blue: 0.30)
         case .demo: return Color.white.opacity(0.32)
         }
+    }
+
+    private var activeNotificationGuide: NotificationGuide {
+        notificationGuide(
+            permission: notificationAuth.permission,
+            inAppEnabled: notificationsEnabled,
+            promptDismissed: notificationPromptDismissed,
+            settingsHintDismissed: notificationSettingsHintDismissed
+        )
+    }
+
+    @ViewBuilder
+    private var updateBannerCard: some View {
+        if case .available(let version, _, let dmgURL) = updates.banner() {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 6) {
+                    Image(systemName: "arrow.down.circle.fill")
+                        .font(.system(size: 11, weight: .bold))
+                    Text("发现新版本 \(version)")
+                        .font(.system(size: 12, weight: .semibold))
+                    Spacer()
+                }
+                .foregroundStyle(Color(red: 0.55, green: 0.86, blue: 1.0))
+                Text("这是 GitHub 上的官方 Release。下载 DMG 后请自行安装，Agent Bar 不会覆盖正在运行的 App。")
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(Color.white.opacity(0.72))
+                    .fixedSize(horizontal: false, vertical: true)
+                HStack(spacing: 8) {
+                    if dmgURL != nil {
+                        Button(action: { updates.downloadDMG() }) {
+                            Text("下载 DMG")
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(Color.black)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 5)
+                                .background(Capsule().fill(Color(red: 0.55, green: 0.86, blue: 1.0)))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    Button(action: { updates.openReleasePage() }) {
+                        Text("打开发布页")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(Color.white.opacity(0.8))
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 5)
+                            .background(Capsule().fill(Color.white.opacity(0.08)))
+                    }
+                    .buttonStyle(.plain)
+                    Button(action: { updates.snoozeCurrent() }) {
+                        Text("稍后")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(Color.white.opacity(0.7))
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 5)
+                            .background(Capsule().fill(Color.white.opacity(0.08)))
+                    }
+                    .buttonStyle(.plain)
+                    .help("24 小时内不再提示这个版本")
+                    Button(action: { updates.dismissCurrent() }) {
+                        Text("忽略")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(Color.white.opacity(0.55))
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 5)
+                    }
+                    .buttonStyle(.plain)
+                    .help("不再提示这个版本")
+                }
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color(red: 0.35, green: 0.62, blue: 0.95).opacity(0.12)))
+            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Color(red: 0.55, green: 0.86, blue: 1.0).opacity(0.28), lineWidth: 0.7))
+        }
+    }
+
+    @ViewBuilder
+    private var notificationGuideCard: some View {
+        switch activeNotificationGuide {
+        case .none:
+            EmptyView()
+        case .offerSystemPrompt:
+            notificationGuideShell(
+                title: "开启系统通知",
+                body: "审批、完成和失败可以显示 macOS 通知。还没授权时仍然只播放提示音，不会反复弹出系统对话框。",
+                primary: "允许通知",
+                primaryAction: { notificationAuth.requestPermission() },
+                secondary: "以后再说",
+                secondaryAction: { notificationPromptDismissed = true }
+            )
+        case .offerSystemSettings:
+            notificationGuideShell(
+                title: "通知未授权",
+                body: "系统已经拒绝通知。请到「系统设置 → 通知 → Agent Bar」打开。在此之前只有提示音。",
+                primary: "打开系统设置",
+                primaryAction: { notificationAuth.openSystemSettings() },
+                secondary: "知道了",
+                secondaryAction: { notificationSettingsHintDismissed = true }
+            )
+        }
+    }
+
+    private func notificationGuideShell(
+        title: String,
+        body: String,
+        primary: String,
+        primaryAction: @escaping () -> Void,
+        secondary: String,
+        secondaryAction: @escaping () -> Void
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Color.white.opacity(0.9))
+            Text(body)
+                .font(.system(size: 10.5))
+                .foregroundStyle(Color.white.opacity(0.68))
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 8) {
+                Button(action: primaryAction) {
+                    Text(primary)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Color.black)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 5)
+                        .background(Capsule().fill(Color(red: 0.95, green: 0.82, blue: 0.45)))
+                }
+                .buttonStyle(.plain)
+                Button(action: secondaryAction) {
+                    Text(secondary)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Color.white.opacity(0.7))
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 5)
+                        .background(Capsule().fill(Color.white.opacity(0.08)))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.white.opacity(0.04)))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Color.white.opacity(0.08), lineWidth: 0.7))
     }
 
     private var protocolBanner: some View {
@@ -2177,11 +2345,93 @@ struct PanelView: View {
                         .controlSize(.small)
                 }
 
-                settingsRow(title: "通知", subtitle: "审批、完成、失败时提醒（需系统授权）") {
+                settingsRow(title: "通知", subtitle: notificationSettingsDetail(notificationAuth.permission)) {
                     Toggle("", isOn: $notificationsEnabled)
                         .labelsHidden()
                         .toggleStyle(.switch)
                         .controlSize(.small)
+                }
+
+                if notificationAuth.permission == .notDetermined || notificationAuth.permission == .denied {
+                    HStack(spacing: 8) {
+                        if notificationAuth.permission == .notDetermined {
+                            Button(action: { notificationAuth.requestPermission() }) {
+                                Text("允许通知")
+                                    .font(.system(size: 10.5, weight: .semibold))
+                                    .foregroundStyle(Color.black)
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 4)
+                                    .background(Capsule().fill(Color(red: 0.95, green: 0.82, blue: 0.45)))
+                            }
+                            .buttonStyle(.plain)
+                        } else {
+                            Button(action: { notificationAuth.openSystemSettings() }) {
+                                Text("打开系统设置")
+                                    .font(.system(size: 10.5, weight: .semibold))
+                                    .foregroundStyle(Color.white.opacity(0.8))
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 4)
+                                    .background(Capsule().fill(Color.white.opacity(0.08)))
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        Text("未授权时只有提示音")
+                            .font(.system(size: 9.5))
+                            .foregroundStyle(Color.white.opacity(0.32))
+                        Spacer()
+                    }
+                }
+
+                settingsRow(title: "软件更新", subtitle: updateSettingsDetail(updates.phase)) {
+                    Button(action: { updates.checkNow() }) {
+                        Text(updates.phase == .checking ? "检查中" : "检查")
+                            .font(.system(size: 10.5, weight: .semibold))
+                            .foregroundStyle(Color.white.opacity(0.75))
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 4)
+                            .background(Capsule().fill(Color.white.opacity(0.08)))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(updates.phase == .checking)
+                }
+
+                if case .available = updates.phase {
+                    HStack(spacing: 8) {
+                        if case .available(_, _, let dmgURL) = updates.phase, dmgURL != nil {
+                            Button(action: { updates.downloadDMG() }) {
+                                Text("下载 DMG")
+                                    .font(.system(size: 10.5, weight: .semibold))
+                                    .foregroundStyle(Color.black)
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 4)
+                                    .background(Capsule().fill(Color(red: 0.55, green: 0.86, blue: 1.0)))
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        Button(action: { updates.openReleasePage() }) {
+                            Text("发布页")
+                                .font(.system(size: 10.5, weight: .semibold))
+                                .foregroundStyle(Color.white.opacity(0.75))
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 4)
+                                .background(Capsule().fill(Color.white.opacity(0.08)))
+                        }
+                        .buttonStyle(.plain)
+                        Button(action: { updates.snoozeCurrent() }) {
+                            Text("稍后")
+                                .font(.system(size: 10.5, weight: .semibold))
+                                .foregroundStyle(Color.white.opacity(0.65))
+                        }
+                        .buttonStyle(.plain)
+                        .help("24 小时内不再提示这个版本")
+                        Button(action: { updates.dismissCurrent() }) {
+                            Text("忽略此版本")
+                                .font(.system(size: 10.5, weight: .semibold))
+                                .foregroundStyle(Color.white.opacity(0.45))
+                        }
+                        .buttonStyle(.plain)
+                        Spacer()
+                    }
                 }
 
                 settingsRow(title: "思考自动中文化", subtitle: "优先显示中文译文，关闭则显示原文") {

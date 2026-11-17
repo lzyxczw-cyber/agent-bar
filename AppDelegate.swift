@@ -13,6 +13,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     let ui = UIModel()
     let system = SystemStatus()
     let net = NetSpeed()
+    let updates = UpdateCenter()
+    let notificationAuth = NotificationAuthCenter()
 
     private var barPanel: NSPanel?
     private var panel: NSPanel?
@@ -44,6 +46,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private var lastNotifiedFinished: Set<String> = []
     private var previousStatuses: [String: AgentStatus] = [:]
     private var liveSeenOnce = false
+    private var didSurfaceNotificationGuide = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -71,6 +74,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         startBridgeWatchdog()
         installPanelBehavior()
         setupNotifications()
+        updates.start()
 
         NotificationCenter.default.addObserver(
             self,
@@ -239,7 +243,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         let container = BarContainerView(frame: NSRect(origin: .zero, size: frame.size))
         container.onClick = { [weak self] point, clickCount in self?.handleBarClick(at: point, clickCount: clickCount) }
         container.onRightClick = { [weak self] event in self?.showBarContextMenu(event) }
-        let host = NSHostingView(rootView: BarView(store: store, geom: geom, ui: ui, sys: system, net: net))
+        let host = NSHostingView(rootView: BarView(
+            store: store, geom: geom, ui: ui, sys: system, net: net, updates: updates
+        ))
         host.frame = container.bounds
         host.autoresizingMask = [.width, .height]
         container.addSubview(host)
@@ -285,7 +291,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             onScreenChanged: { [weak self] in self?.applyScreenSelection() },
             onOpenApp: { [weak self] bundle in self?.openExternalApp(bundle) },
             onOpenAdapterLog: { [weak self] in self?.openAdapterLog() },
-            onRestartAdapters: { [weak self] in self?.restartAppAdapters() }
+            onRestartAdapters: { [weak self] in self?.restartAppAdapters() },
+            updates: updates,
+            notificationAuth: notificationAuth
         ))
         host.frame = NSRect(origin: .zero, size: size)
         panel.contentView = host
@@ -1073,23 +1081,55 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     private func setupNotifications() {
         guard canUseNotifications else {
+            notificationAuth.markUnavailable()
             dlog("[agentbar] notifications unavailable (unbundled binary)")
             return
         }
-        let center = UNUserNotificationCenter.current()
-        center.delegate = self
-        DispatchQueue.main.async {
-            // Accessory (menu-bar) apps need to be active for the system permission prompt.
-            NSApp.activate(ignoringOtherApps: true)
-            center.requestAuthorization(options: [.alert, .sound]) { granted, _ in
-                dlog("[agentbar] notifications authorized=" + String(granted))
-            }
+        UNUserNotificationCenter.current().delegate = self
+        notificationAuth.refresh()
+    }
+
+    private func currentNotificationGuide() -> NotificationGuide {
+        let enabled: Bool
+        if UserDefaults.standard.object(forKey: "AgentBarNotificationsEnabled") == nil {
+            enabled = true
+        } else {
+            enabled = UserDefaults.standard.bool(forKey: "AgentBarNotificationsEnabled")
         }
+        return notificationGuide(
+            permission: notificationAuth.permission,
+            inAppEnabled: enabled,
+            promptDismissed: UserDefaults.standard.bool(forKey: "AgentBarNotificationPromptDismissed"),
+            settingsHintDismissed: UserDefaults.standard.bool(forKey: "AgentBarNotificationSettingsHintDismissed")
+        )
+    }
+
+    /// Open the panel once per launch when a notice needs permission the user has not dismissed.
+    private func maybeShowNotificationGuide() {
+        guard currentNotificationGuide() != .none else { return }
+        guard !didSurfaceNotificationGuide else { return }
+        didSurfaceNotificationGuide = true
+        if !isExpanded { setExpanded(true) }
+        dlog("[agentbar] notification guide surfaced")
     }
 
     private func postNotification(title: String, body: String, agentID: String) {
         NSSound(named: "Glass")?.play()
-        guard canUseNotifications else { return }
+        guard canUseNotifications else {
+            maybeShowNotificationGuide()
+            return
+        }
+        // `.unknown` means the authorization read has not returned yet. Still try
+        // the system banner so a previously authorized app does not drop alerts
+        // during launch. A known denial or an undecided state stays sound-only.
+        switch notificationAuth.permission {
+        case .denied, .notDetermined, .unavailable:
+            dlog("[agentbar] notification sound only (\(notificationAuth.permission.rawValue))")
+            maybeShowNotificationGuide()
+            return
+        case .authorized, .unknown:
+            break
+        }
         let content = UNMutableNotificationContent()
         content.title = title
         content.body = body

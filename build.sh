@@ -6,7 +6,9 @@ echo "==> compiling agentbar"
 # Pin the deployment target: without this, swiftc inherits the SDK/host default
 # (minos 28.0 on this machine) and LaunchServices refuses to launch the app on
 # any OS older than that with error -10825.
-xcrun swiftc -swift-version 5 -O -target arm64-apple-macosx14.0   main.swift Support.swift Models.swift Views.swift Chrome.swift AppDelegate.swift   -o agentbar
+xcrun swiftc -swift-version 5 -O -target arm64-apple-macosx14.0 \
+  main.swift Support.swift Models.swift Views.swift Chrome.swift AppDelegate.swift ReleaseUpdate.swift \
+  -o agentbar
 
 APP="Agent Bar.app"
 echo "==> packaging $APP"
@@ -43,9 +45,9 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>0.3.4</string>
+    <string>0.3.5</string>
     <key>CFBundleVersion</key>
-    <string>8</string>
+    <string>0.3.5</string>
     <key>LSMinimumSystemVersion</key>
     <string>14.0</string>
     <key>LSUIElement</key>

@@ -233,5 +233,122 @@ case .failure(let error):
     check(error.message == "请回答所有问题", "empty answer message (\(error.message))")
 }
 
+// Release versions. Only stable x.y.z counts.
+check(parseReleaseVersion("v0.3.5") == ReleaseVersion(major: 0, minor: 3, patch: 5), "parse v0.3.5")
+check(parseReleaseVersion("0.3.4") == ReleaseVersion(major: 0, minor: 3, patch: 4), "parse bare version")
+check(parseReleaseVersion("0.3.5-beta") == nil, "reject prerelease suffix")
+check(parseReleaseVersion("0.3") == nil, "reject short version")
+check(parseReleaseVersion("v0.3.5 ") == ReleaseVersion(major: 0, minor: 3, patch: 5), "trim version")
+check(ReleaseVersion(major: 0, minor: 3, patch: 5) > ReleaseVersion(major: 0, minor: 3, patch: 4), "0.3.5 is newer")
+check(!(ReleaseVersion(major: 0, minor: 3, patch: 4) > ReleaseVersion(major: 0, minor: 3, patch: 4)), "equal is not newer")
+check(gitHubLatestReleaseURL() == "https://api.github.com/repos/lzyxczw-cyber/agent-bar/releases/latest", "latest release endpoint")
+
+let releaseFixture = """
+{"tag_name":"v0.3.6","draft":false,"prerelease":false,"html_url":"https://evil.example/release","assets":[{"name":"Agent-Bar-0.3.6.dmg","browser_download_url":"https://github.com/lzyxczw-cyber/agent-bar/releases/download/v0.3.6/Agent-Bar-0.3.6.dmg"},{"name":"Agent-Bar-0.3.6.dmg.sha256","browser_download_url":"https://github.com/lzyxczw-cyber/agent-bar/releases/download/v0.3.6/Agent-Bar-0.3.6.dmg.sha256"}]}
+""".data(using: .utf8)!
+let parsedRelease = parseGitHubLatestRelease(releaseFixture)
+check(parsedRelease?.tagName == "v0.3.6", "parse tag")
+check(parsedRelease?.assets.count == 2, "parse both assets")
+let newer = evaluateReleaseUpdate(current: "0.3.5", release: parsedRelease!)
+if case .available(let latest, let page, let dmg) = newer {
+    check(latest == "0.3.6", "available version")
+    check(page == "https://github.com/lzyxczw-cyber/agent-bar/releases/tag/v0.3.6", "page is the official tag, not html_url")
+    check(dmg == "https://github.com/lzyxczw-cyber/agent-bar/releases/download/v0.3.6/Agent-Bar-0.3.6.dmg", "official dmg")
+    check(isTrustedGitHubReleaseURL(page), "page is trusted")
+    check(isTrustedGitHubReleaseURL(dmg!), "dmg is trusted")
+} else {
+    check(false, "newer release should be available")
+}
+check(!isTrustedGitHubReleaseURL("https://evil.example/Agent-Bar-0.3.6.dmg"), "reject foreign host")
+check(!isTrustedGitHubReleaseURL("http://github.com/lzyxczw-cyber/agent-bar/releases/tag/v0.3.6"), "reject http")
+
+let same = evaluateReleaseUpdate(current: "0.3.6", release: parsedRelease!)
+if case .upToDate(let latest) = same {
+    check(latest == "0.3.6", "same version is up to date")
+} else {
+    check(false, "same version should be up to date")
+}
+let older = evaluateReleaseUpdate(current: "0.4.0", release: parsedRelease!)
+if case .upToDate = older {
+    check(true, "newer local build is up to date")
+} else {
+    check(false, "local build ahead of GitHub is up to date")
+}
+
+var prerelease = parsedRelease!
+prerelease.prerelease = true
+if case .upToDate = evaluateReleaseUpdate(current: "0.3.5", release: prerelease) {
+    check(true, "prerelease is not offered")
+} else {
+    check(false, "prerelease must not be offered")
+}
+var mismatched = parsedRelease!
+mismatched.assets = [GitHubReleaseAsset(name: "Agent-Bar-0.3.6.dmg", browserDownloadURL: "https://example.com/Agent-Bar-0.3.6.dmg")]
+if case .available(_, let page, let dmg) = evaluateReleaseUpdate(current: "0.3.5", release: mismatched) {
+    check(page.hasPrefix("https://github.com/lzyxczw-cyber/agent-bar/releases/tag/"), "mismatched asset still has a release page")
+    check(dmg == nil, "mismatched asset does not become a download")
+} else {
+    check(false, "mismatched asset still announces the release")
+}
+check(parseGitHubLatestRelease(Data("{\"message\":\"not found\"}".utf8)) == nil, "error payload is not a release")
+
+let now = Date(timeIntervalSince1970: 1_700_000_000)
+check(updatePollDue(lastCheckedAt: nil, now: now, minimumInterval: updatePollInterval), "first check is due")
+check(!updatePollDue(lastCheckedAt: now.addingTimeInterval(-3600), now: now, minimumInterval: updatePollInterval), "one hour is not due")
+check(updatePollDue(lastCheckedAt: now.addingTimeInterval(-updatePollInterval), now: now, minimumInterval: updatePollInterval), "interval boundary is due")
+
+let available = UpdatePhase.available(
+    latest: "0.3.6",
+    pageURL: "https://github.com/lzyxczw-cyber/agent-bar/releases/tag/v0.3.6",
+    dmgURL: "https://github.com/lzyxczw-cyber/agent-bar/releases/download/v0.3.6/Agent-Bar-0.3.6.dmg"
+)
+if case .available(let version, _, _) = updateBanner(phase: available, dismissedVersion: "", snoozedVersion: "", snoozedUntil: nil, now: now) {
+    check(version == "0.3.6", "banner shows the new version")
+} else {
+    check(false, "banner should show")
+}
+check(
+    updateBanner(phase: available, dismissedVersion: "0.3.6", snoozedVersion: "", snoozedUntil: nil, now: now) == .hidden,
+    "dismissed version stays hidden"
+)
+check(
+    updateBanner(phase: available, dismissedVersion: "0.3.5", snoozedVersion: "0.3.6", snoozedUntil: now.addingTimeInterval(60), now: now) == .hidden,
+    "snoozed version stays hidden"
+)
+if case .available = updateBanner(phase: available, dismissedVersion: "", snoozedVersion: "0.3.6", snoozedUntil: now.addingTimeInterval(-1), now: now) {
+    check(true, "expired snooze shows again")
+} else {
+    check(false, "expired snooze should show")
+}
+if case .available = updateBanner(phase: available, dismissedVersion: "", snoozedVersion: "0.3.5", snoozedUntil: now.addingTimeInterval(3600), now: now) {
+    check(true, "snooze for another version does not hide this one")
+} else {
+    check(false, "other snooze should not hide")
+}
+check(updateBanner(phase: .failed(message: "网络不可用，没有连上 GitHub"), dismissedVersion: "", snoozedVersion: "", snoozedUntil: nil, now: now) == .hidden, "failure is not a bar notice")
+check(updateBanner(phase: .upToDate(latest: "0.3.5"), dismissedVersion: "", snoozedVersion: "", snoozedUntil: nil, now: now) == .hidden, "up to date has no banner")
+check(updateFailureMessage(statusCode: nil) == "网络不可用，没有连上 GitHub", "network failure copy")
+check(updateFailureMessage(statusCode: 403) == "GitHub 暂时限制了请求，请稍后再试", "rate limit copy")
+check(updateFailureMessage(statusCode: 500) == "GitHub 返回 HTTP 500", "http failure copy")
+check(updateSettingsDetail(.noRelease).contains("还没有公开的 Release"), "no release copy")
+
+// Notification guide: one card until dismissed, sound-only when not authorized.
+check(notificationGuide(permission: .notDetermined, inAppEnabled: true, promptDismissed: false, settingsHintDismissed: false) == .offerSystemPrompt, "first prompt")
+check(notificationGuide(permission: .notDetermined, inAppEnabled: true, promptDismissed: true, settingsHintDismissed: false) == .none, "dismissed prompt stays quiet")
+check(notificationGuide(permission: .denied, inAppEnabled: true, promptDismissed: true, settingsHintDismissed: false) == .offerSystemSettings, "denied explains settings")
+check(notificationGuide(permission: .denied, inAppEnabled: true, promptDismissed: false, settingsHintDismissed: true) == .none, "dismissed settings hint stays quiet")
+check(notificationGuide(permission: .authorized, inAppEnabled: true, promptDismissed: false, settingsHintDismissed: false) == .none, "authorized does not nag")
+check(notificationGuide(permission: .notDetermined, inAppEnabled: false, promptDismissed: false, settingsHintDismissed: false) == .none, "toggle off does not nag")
+check(notificationGuide(permission: .unavailable, inAppEnabled: true, promptDismissed: false, settingsHintDismissed: false) == .none, "unbundled does not nag")
+check(!notificationDeliversBanner(permission: .denied, inAppEnabled: true), "denied is sound only")
+check(!notificationDeliversBanner(permission: .notDetermined, inAppEnabled: true), "undecided is sound only")
+check(notificationDeliversBanner(permission: .authorized, inAppEnabled: true), "authorized delivers a banner")
+check(!notificationDeliversBanner(permission: .authorized, inAppEnabled: false), "toggle off skips the banner")
+check(notificationSettingsDetail(.denied).contains("提示音"), "denied copy keeps the sound fallback")
+check(notificationPermission(from: .denied) == .denied, "map denied")
+check(notificationPermission(from: .authorized) == .authorized, "map authorized")
+check(notificationPermission(from: .provisional) == .authorized, "provisional counts as authorized")
+check(notificationPermission(from: .notDetermined) == .notDetermined, "map not determined")
+
 print("\(checks - failures)/\(checks) checks passed")
 exit(failures == 0 ? 0 : 1)
