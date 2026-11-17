@@ -2130,7 +2130,7 @@ struct PanelView: View {
                     VStack(alignment: .leading, spacing: 8) {
                         HStack(spacing: 8) {
                             if agent.isExternal {
-                                Text(externalApprovalReadOnlyReason(agent.name))
+                                Text(externalApprovalReadOnlyReason(agentName: agent.name))
                                     .font(.system(size: 10.5, weight: .medium))
                                     .foregroundStyle(Color.white.opacity(0.62))
                                     .fixedSize(horizontal: false, vertical: true)
