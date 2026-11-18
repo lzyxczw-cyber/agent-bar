@@ -28,7 +28,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-const STATUSES = new Set (['running', 'waiting', 'done', 'failed']);
+const STATUSES = new Set (['idle', 'running', 'waiting', 'done', 'failed']);
 const FIELD_FLAGS = {
   '--id': 'id',
   '--name': 'name',
@@ -52,7 +52,7 @@ function usage () {
     '选项:',
     '  --id <id>           agent 标识（写入 <id>.json，必填）',
     '  --name <name>       显示名称（默认 <id>）',
-    '  --status <state>    running | waiting | done | failed',
+    '  --status <state>    idle | running | waiting | done | failed',
     '  --project <name>    项目名',
     '  --tool <text>       当前工具/动作，如 "Bash: swift build"',
     '  --detail <text>     补充说明',
@@ -198,7 +198,7 @@ function writeReport ({ directory, id, payload, fields }) {
   let status = merged.status;
   if (status === undefined || status === null || status === '') status = 'running';
   status = String (status).trim ().toLowerCase ();
-  if (!STATUSES.has (status)) throw new CliError ('--status 必须是 running | waiting | done | failed');
+  if (!STATUSES.has (status)) throw new CliError ('--status 必须是 idle | running | waiting | done | failed');
   merged.status = status;
   normalizeJsonFields (merged);
 

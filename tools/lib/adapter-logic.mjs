@@ -3,6 +3,9 @@
  * Status is inferred from local files. There is no official API.
  */
 
+export const HERMES_RUNNING_MS = 90 * 1000;
+export const RECENT_ROUND_MS = 3 * 60 * 1000;
+
 export function hermesTimestampMs (value) {
   const number = Number (value);
   if (!Number.isFinite (number) || number <= 0) return null;
@@ -89,7 +92,7 @@ function compact (value, limit) {
  * Open sessions whose latest message is within `runningMs` (default 90s).
  * At most `limit` sessions, newest activity first. Ended or stale sessions are omitted.
  */
-export function inferHermesRunning (sessions, messagesById, now, limit = 3, runningMs = 90 * 1000) {
+export function inferHermesRunning (sessions, messagesById, now, limit = 3, runningMs = HERMES_RUNNING_MS) {
   const reports = [];
   for (const session of sessions || []) {
     if (!session || !session.id || session.endedAt != null) continue;
@@ -114,20 +117,95 @@ export function inferHermesRunning (sessions, messagesById, now, limit = 3, runn
   return reports.slice (0, Math.max (0, limit));
 }
 
-export function hermesIdleReport (sessions, now) {
+/**
+ * Quiet Hermes row. A message newer than the running window and still inside
+ * the recent-round window is a finished round. Older or missing activity is
+ * 待命, not 完成.
+ */
+export function hermesIdleStatus (lastMessageAt, now, runningMs = HERMES_RUNNING_MS, recentMs = RECENT_ROUND_MS) {
+  if (typeof lastMessageAt !== 'number' || !Number.isFinite (lastMessageAt)) return 'idle';
+  const age = now - lastMessageAt;
+  if (age < 0 || age > recentMs) return 'idle';
+  if (age <= runningMs) return 'running';
+  return 'done';
+}
+
+export function hermesIdleReport (sessions, now, messagesById = null) {
   const open = (sessions || []).filter ((session) => session && session.id && session.endedAt == null);
   open.sort ((a, b) => (b.startedAt || 0) - (a.startedAt || 0));
   const newest = open[0] || null;
+  let lastMessageAt = null;
+  if (messagesById) {
+    for (const session of open) {
+      const message = messagesById[session.id];
+      if (!message || typeof message.at !== 'number') continue;
+      if (lastMessageAt == null || message.at > lastMessageAt) lastMessageAt = message.at;
+    }
+  }
+  const quiet = hermesIdleStatus (lastMessageAt, now);
+  const status = quiet === 'running' ? 'idle' : quiet;
   return {
     id: 'hermes',
     name: 'Hermes',
-    status: 'done',
+    status,
     project: newest ? projectFor (newest) : 'Hermes',
-    tool: '空闲',
+    tool: status === 'done' ? '本轮完成' : '空闲',
     thought: null,
     startedAt: newest && newest.startedAt ? newest.startedAt : now,
     updatedAt: now
   };
+}
+
+/**
+ * Codex standby row. A turn that finished inside the recent window is 完成
+ * (or 失败). No completion timestamp, or an older turn, is 待命.
+ */
+export function codexStandbyStatus (turn, now, recentMs = RECENT_ROUND_MS) {
+  if (!turn || typeof turn !== 'object') return 'idle';
+  const raw = typeof turn.status === 'string' ? turn.status.trim ().toLowerCase () : '';
+  const completed = hermesTimestampMs (turn.completed_at != null ? turn.completed_at : turn.completedAt);
+  if (completed == null || now < completed || now - completed > recentMs) return 'idle';
+  if (raw === 'failed' || raw === 'error' || raw === 'failure') return 'failed';
+  if (raw === 'inprogress' || raw === 'running') return 'idle';
+  return 'done';
+}
+
+/** WorkBuddy standby row. Only a trace that just ended is a finished round. */
+export function workbuddyStandbyStatus (trace, now, recentMs = RECENT_ROUND_MS) {
+  if (!trace || typeof trace !== 'object' || trace.endedAt == null || trace.endedAt === '') return 'idle';
+  let ended = null;
+  if (typeof trace.endedAt === 'number') ended = hermesTimestampMs (trace.endedAt);
+  else {
+    const parsed = Date.parse (String (trace.endedAt));
+    ended = Number.isFinite (parsed) ? parsed : null;
+  }
+  if (ended == null || now < ended || now - ended > recentMs) return 'idle';
+  return 'done';
+}
+
+/**
+ * Grok activity. Streaming or an unanswered fresh send is 运行. A fresh send
+ * that already has a reply is 完成. Anything older is 待命.
+ */
+export function grokActivityStatus ({ streaming = false, sentAt = null, assistantReplied = true, now, recentMs = RECENT_ROUND_MS } = {}) {
+  const sent = Number (sentAt);
+  // Same freshness window the adapter used for an in-flight send (< 3 min).
+  const fresh = Number.isFinite (sent) && sent > 0 && (now - sent) < recentMs;
+  if (streaming || (fresh && assistantReplied === false)) return 'running';
+  if (fresh && assistantReplied === true) return 'done';
+  return 'idle';
+}
+
+/**
+ * Parent status when no child is running.
+ * An explicit finished, failed, or waiting report is kept. Standby is idle.
+ */
+export function standbyParentStatus (raw) {
+  const status = typeof raw === 'string' ? raw.trim ().toLowerCase () : '';
+  if (status === 'done' || status === 'failed' || status === 'waiting' || status === 'approval') {
+    return status === 'approval' ? 'waiting' : status;
+  }
+  return 'idle';
 }
 
 /**
@@ -144,7 +222,7 @@ export function aggregateApp (adapter, reports) {
     return {
       id: adapter.group,
       name: adapter.name,
-      status: 'done',
+      status: standbyParentStatus (idle.status),
       project: idle.project || adapter.name,
       tool: idle.tool || '空闲',
       detail: idle.detail || null,

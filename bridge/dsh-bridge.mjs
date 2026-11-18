@@ -39,6 +39,7 @@ import { ThoughtTranslator } from './lib/translate.mjs';
 import { classifyDshProbe } from './lib/protocol.mjs';
 import { buildQuestionResult, normalizeUserQuestions, QUESTION_CANCELLED_OUTCOME } from './lib/questions.mjs';
 import { applyUsageTick, usageTotal } from './lib/usage.mjs';
+import { canonicalExternalStatus } from './lib/status.mjs';
 import { openMux, openEventStream } from './vendor/ws-mux.mjs';
 
 const BRIDGE_DIR = path.dirname (fileURLToPath (import.meta.url));
@@ -46,7 +47,6 @@ const SCHEMA_VERSION = 1;
 const STATUS_WRITE_HEARTBEAT_MS = 5000;
 const EXTERNAL_STALE_MS = 120 * 1000;      // no heartbeat for 2 min -> hide
 const EXTERNAL_MAX_AGE_MS = 10 * 60 * 1000; // older reports are ignored entirely
-const EXTERNAL_STATUSES = new Set (['running', 'waiting', 'done', 'failed']);
 
 /** External agents report directory (env override wins over the App Support default). */
 function defaultAgentsDir () {
@@ -233,7 +233,7 @@ function normalizeExternalSessions (sessions) {
       project: textField (item.project, 160),
       tool: textField (item.tool, 160),
       detail: textField (item.detail, 300),
-      status: rawStatus && EXTERNAL_STATUSES.has (rawStatus) ? rawStatus : 'done',
+      status: canonicalExternalStatus (rawStatus),
       startedAt: numberField (item.startedAt),
       updatedAt: numberField (item.updatedAt),
       tokens: numberField (item.tokens),
@@ -265,7 +265,7 @@ function normalizeExternalAgent (data, filename, stat) {
   const rawId = textField (data.id, 80) || fallbackId;
   const agentId = 'ext:' + rawId;
   const rawStatus = textField (data.status, 20);
-  const status = rawStatus && EXTERNAL_STATUSES.has (rawStatus) ? rawStatus : 'idle';
+  const status = canonicalExternalStatus (rawStatus);
   const updatedAt = numberField (data.updatedAt);
   const startedAt = numberField (data.startedAt);
   const mtime = Math.round (stat.mtimeMs);

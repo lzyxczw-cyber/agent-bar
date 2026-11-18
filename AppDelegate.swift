@@ -519,14 +519,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     private func mapLiveAgent(_ live: LiveFeed.LiveAgent) -> Agent {
-        let status: AgentStatus
-        switch live.status {
-        case "approval", "waiting": status = .waiting
-        case "running": status = .running
-        case "failed": status = .failed
-        case "idle", "done": status = .done
-        default: status = .done
-        }
+        let status = AgentStatus.external(live.status)
         let firstApproval = live.approvals?.first
         let questions = mapQuestions(firstApproval?.questions)
         let tool: String
@@ -544,8 +537,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         var note: String?
         if let count = live.approvals?.count, count > 1 {
             note = "\(count) 个待处理"
-        } else if status == .done {
-            note = "空闲"
         } else if live.origin == "subagent" {
             note = "子代理"
         }

@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildQuestionResult, normalizeUserQuestions, QUESTION_CANCELLED_OUTCOME } from '../bridge/lib/questions.mjs';
 import { classifyDshProbe } from '../bridge/lib/protocol.mjs';
+import { canonicalExternalStatus } from '../bridge/lib/status.mjs';
 
 test('plain single-select question is answerable and answers with the option label', () => {
   const normalized = normalizeUserQuestions ({
@@ -98,6 +99,21 @@ test('cancel outcome is the DSH UserQuestionError, not a selected label', () => 
   assert.equal (QUESTION_CANCELLED_OUTCOME.kind, 'rejected');
   assert.equal (QUESTION_CANCELLED_OUTCOME.error.code, 'ASK_CANCELLED');
   assert.equal (QUESTION_CANCELLED_OUTCOME.error.name, 'UserQuestionError');
+});
+
+test('external status keeps a finished round apart from idle', () => {
+  assert.equal (canonicalExternalStatus ('idle'), 'idle');
+  assert.equal (canonicalExternalStatus (' IDLE '), 'idle');
+  assert.equal (canonicalExternalStatus (null), 'idle');
+  assert.equal (canonicalExternalStatus (''), 'idle');
+  assert.equal (canonicalExternalStatus ('unknown'), 'idle');
+  assert.equal (canonicalExternalStatus ('completed'), 'idle');
+  assert.equal (canonicalExternalStatus ('done'), 'done');
+  assert.equal (canonicalExternalStatus ('DONE'), 'done');
+  assert.equal (canonicalExternalStatus ('running'), 'running');
+  assert.equal (canonicalExternalStatus ('waiting'), 'waiting');
+  assert.equal (canonicalExternalStatus ('approval'), 'waiting');
+  assert.equal (canonicalExternalStatus ('failed'), 'failed');
 });
 
 test('session/list probe distinguishes unavailable, mismatch, and ok', () => {
