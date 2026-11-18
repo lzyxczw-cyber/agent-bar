@@ -2,7 +2,7 @@
   "version": 1,
   "canvas": 128,
   "background": "transparent",
-  "notes": "128×128 idle 4 frames, drawn on a 32 logical grid (4×4 solid px). Confirm with the product owner before shipping.",
+  "notes": "128×128 idle 4 frames, 32-grid hard pixels. 2026-11-18 陆正阳确认：claude/workbuddy/dsh/hermes/codex/grok 为各 App 识别稿（非官方原文件，右下角不画状态点）。Hermes 对应现有 bolt 槽（nameMatchers: hermes），agents/hermes/ 与 agents/bolt/ 为同一套。whale/island/magnifier/flask/generic 仍为第一版，未改。",
   "agents": [
     {
       "id": "codex",
@@ -15,7 +15,7 @@
       "sets": {
         "idle": {
           "frames": 4,
-          "suggestedIntervalSec": 0.70
+          "suggestedIntervalSec": 0.7
         }
       }
     },
@@ -28,7 +28,7 @@
       "sets": {
         "idle": {
           "frames": 4,
-          "suggestedIntervalSec": 0.70
+          "suggestedIntervalSec": 0.7
         }
       }
     },
@@ -42,7 +42,7 @@
       "sets": {
         "idle": {
           "frames": 4,
-          "suggestedIntervalSec": 0.70
+          "suggestedIntervalSec": 0.7
         }
       }
     },
@@ -57,7 +57,7 @@
       "sets": {
         "idle": {
           "frames": 4,
-          "suggestedIntervalSec": 0.70
+          "suggestedIntervalSec": 0.7
         }
       }
     },
@@ -70,7 +70,7 @@
       "sets": {
         "idle": {
           "frames": 4,
-          "suggestedIntervalSec": 0.70
+          "suggestedIntervalSec": 0.7
         }
       }
     },
@@ -82,7 +82,7 @@
       "sets": {
         "idle": {
           "frames": 4,
-          "suggestedIntervalSec": 0.70
+          "suggestedIntervalSec": 0.7
         }
       }
     },
@@ -96,22 +96,23 @@
       "sets": {
         "idle": {
           "frames": 4,
-          "suggestedIntervalSec": 0.70
+          "suggestedIntervalSec": 0.7
         }
       }
     },
     {
       "id": "bolt",
-      "displayName": "Bolt",
+      "displayName": "Hermes",
       "nameMatchers": [
         "hermes"
       ],
       "sets": {
         "idle": {
           "frames": 4,
-          "suggestedIntervalSec": 0.70
+          "suggestedIntervalSec": 0.7
         }
-      }
+      },
+      "notes": "槽位 id 仍为 bolt；画面为 Hermes 识别稿。另有 agents/hermes/ 同套文件。"
     },
     {
       "id": "magnifier",
@@ -123,7 +124,7 @@
       "sets": {
         "idle": {
           "frames": 4,
-          "suggestedIntervalSec": 0.70
+          "suggestedIntervalSec": 0.7
         }
       }
     },
@@ -138,7 +139,7 @@
       "sets": {
         "idle": {
           "frames": 4,
-          "suggestedIntervalSec": 0.70
+          "suggestedIntervalSec": 0.7
         }
       }
     },
@@ -150,7 +151,7 @@
       "sets": {
         "idle": {
           "frames": 4,
-          "suggestedIntervalSec": 0.70
+          "suggestedIntervalSec": 0.7
         }
       }
     }
