@@ -1,6 +1,6 @@
 cask "agent-bar" do
-  version "0.3.8"
-  sha256 "4dc759c05247cee06297339331b169ec501d71b5508dd6e250b8a90b5afb52ee"
+  version "0.3.9"
+  sha256 "5d9d2dcc6553fb1dfaeff419922da3d1983f680372f40bff8e7f266fc959486c"
 
   url "https://github.com/lzyxczw-cyber/agent-bar/releases/download/v#{version}/Agent-Bar-#{version}.dmg"
   name "Agent Bar"
