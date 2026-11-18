@@ -13,9 +13,17 @@ xcrun swiftc -swift-version 5 -O -target arm64-apple-macosx14.0 \
 APP="Agent Bar.app"
 echo "==> packaging $APP"
 rm -rf "$APP"
-mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources/tools"
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources/tools" "$APP/Contents/Resources/bridge"
 cp agentbar "$APP/Contents/MacOS/AgentBar"
 cp tools/agentbar-app-adapters.mjs "$APP/Contents/Resources/tools/agentbar-app-adapters.mjs"
+
+# The released app has no repo checkout beside it. Ship the DSH bridge
+# program inside the bundle; the app copies it to Application Support
+# on launch. Generated runtime files are not part of this copy.
+echo "==> bundling DSH bridge"
+cp tools/sync-bundled-bridge.sh "$APP/Contents/Resources/tools/sync-bundled-bridge.sh"
+chmod +x "$APP/Contents/Resources/tools/sync-bundled-bridge.sh"
+./tools/sync-bundled-bridge.sh bridge "$APP/Contents/Resources/bridge"
 
 # Confirmed 128×128 agent icons, copied unchanged. The app scales them at
 # draw time; PixelSprite is only the fallback when a PNG set is missing.

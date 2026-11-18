@@ -3,12 +3,12 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 # Runtime files live outside ~/Documents so macOS never asks for Documents access.
+# The packaged app performs this same program sync from Contents/Resources/bridge.
+# Dev restart drops the previous snapshot below; control/, audit.log, and
+# usage-state.json stay so a restarted bridge keeps its token and usage baseline.
 APP_SUPPORT="$HOME/Library/Application Support/AgentBar"
 BRIDGE_DEST="$APP_SUPPORT/bridge"
-mkdir -p "$BRIDGE_DEST"
-rm -rf "$BRIDGE_DEST/lib" "$BRIDGE_DEST/vendor"
-cp -R bridge/lib bridge/vendor bridge/dsh-bridge.mjs "$BRIDGE_DEST/"
-cp bridge/README.md "$BRIDGE_DEST/" 2>/dev/null || true
+./tools/sync-bundled-bridge.sh "$PWD/bridge" "$BRIDGE_DEST"
 rm -f "$BRIDGE_DEST/status.json"
 
 pkill -f 'Agent Bar.app/Contents/MacOS/AgentBar' 2>/dev/null || pkill -f 'AgentBar.app/Contents/MacOS/AgentBar' 2>/dev/null || true
