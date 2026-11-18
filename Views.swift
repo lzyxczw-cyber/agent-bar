@@ -1161,23 +1161,39 @@ struct BarView: View {
 
 /// Split out so a per-second speed tick only invalidates this tiny label, not the
 /// whole bar (BarView holds a plain reference, not an @ObservedObject).
+///
+/// Download stays above upload, the old left-to-right order. The two rows share
+/// one value column so the cluster is about as wide as a single rate. Vertical
+/// spacing is zero so both lines fit the existing bar height.
 struct NetSpeedLabel: View {
     @ObservedObject var net: NetSpeed
 
     var body: some View {
-        HStack(spacing: 2.5) {
-            Image(systemName: "arrow.down")
-                .font(.system(size: 7, weight: .bold))
-            Text(net.downText)
-                .font(.system(size: 9, weight: .medium, design: .monospaced))
-                .frame(minWidth: 25, alignment: .trailing)
-            Image(systemName: "arrow.up")
-                .font(.system(size: 7, weight: .bold))
-            Text(net.upText)
-                .font(.system(size: 9, weight: .medium, design: .monospaced))
-                .frame(minWidth: 25, alignment: .trailing)
+        Grid(alignment: .center, horizontalSpacing: 2.5, verticalSpacing: 0) {
+            GridRow {
+                Image(systemName: "arrow.down")
+                    .font(.system(size: 7, weight: .bold))
+                Text(net.downText)
+                    .font(.system(size: 9, weight: .medium, design: .monospaced))
+                    .lineLimit(1)
+                    .frame(minWidth: 25, alignment: .trailing)
+                    .gridColumnAlignment(.trailing)
+            }
+            GridRow {
+                Image(systemName: "arrow.up")
+                    .font(.system(size: 7, weight: .bold))
+                Text(net.upText)
+                    .font(.system(size: 9, weight: .medium, design: .monospaced))
+                    .lineLimit(1)
+                    .frame(minWidth: 25, alignment: .trailing)
+                    .gridColumnAlignment(.trailing)
+            }
         }
+        // The right wing is single-line. Reset that here so these two rows are
+        // not collapsed back into one line of text.
+        .lineLimit(nil)
         .foregroundStyle(Color.white.opacity(0.42))
+        .fixedSize(horizontal: true, vertical: true)
         .opacity(net.isIdle ? 0 : 1)
         .frame(width: net.isIdle ? 0 : nil, alignment: .leading)
         .clipped()
