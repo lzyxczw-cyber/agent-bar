@@ -53,6 +53,16 @@ The external-agent reporter CLI is at the **repository root**:
 `tools/agentbar-report.mjs` (see §11). It is not copied into Application
 Support; run it from the checkout (or symlink it into your `PATH`).
 
+A packaged `Agent Bar.app` ships the program files (`dsh-bridge.mjs`, `lib/`,
+`vendor/`, this README) in `Contents/Resources/bridge/`. On launch the app runs
+`tools/sync-bundled-bridge.sh` and writes that program into
+`~/Library/Application Support/AgentBar/bridge/`, then starts Node from there.
+`tools/` (probe, socket client, asar reader) stays in the repo. `status.json`,
+`status.sock`, `usage-state.json`, `audit.log`, and `control/` are created only
+in the runtime directory and are left in place when the program is refreshed.
+`./start.sh` is the checkout path that syncs from `bridge/`; a DMG install does
+not need it. The app uses a Node already installed on the machine.
+
 Options:
 
 ```

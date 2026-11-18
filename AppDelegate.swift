@@ -64,6 +64,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
         startAgentRotation()
 
+        syncBundledBridgeToAppSupport()
         feedURL = resolveFeedURL()
         if let feedURL = feedURL {
             dlog("[agentbar] live feed path: \(feedURL.path)")
@@ -409,7 +410,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             return URL(fileURLWithPath: args[idx + 1])
         }
         // Runtime files live in Application Support so the app never needs
-        // macOS Documents-folder permission; start.sh keeps this copy in sync.
+        // macOS Documents-folder permission. Launch syncs the bundled bridge
+        // here; start.sh syncs the same directory from a repo checkout.
         if let dir = appSupportBridgeDir() {
             var isDirectory: ObjCBool = false
             if FileManager.default.fileExists(atPath: dir.path, isDirectory: &isDirectory), isDirectory.boolValue {
@@ -631,6 +633,97 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
             self?.ensureBridgeRunning()
         }
+    }
+
+    /// Copy the bridge program shipped inside the app into Application Support.
+    /// The packaged app has no repo beside it, so this is what puts
+    /// dsh-bridge.mjs on disk for a DMG-only install. The sync leaves
+    /// status.json, control/, audit.log, and usage-state.json alone.
+    private func syncBundledBridgeToAppSupport() {
+        guard let source = bundledBridgeDirectory() else {
+            if Bundle.main.bundleURL.pathExtension == "app" {
+                dlog("[agentbar] bundled bridge missing")
+            }
+            return
+        }
+        guard let destination = appSupportBridgeDir() else {
+            dlog("[agentbar] application support directory unavailable")
+            return
+        }
+        guard let script = bundledBridgeSyncScript() else {
+            dlog("[agentbar] bridge sync script missing")
+            return
+        }
+        let logURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("agentbar-bridge-sync-\(ProcessInfo.processInfo.processIdentifier).log")
+        FileManager.default.createFile(atPath: logURL.path, contents: nil)
+        defer { try? FileManager.default.removeItem(at: logURL) }
+        do {
+            let handle = try FileHandle(forWritingTo: logURL)
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/bin/bash")
+            process.arguments = [script.path, source.path, destination.path]
+            process.standardOutput = handle
+            process.standardError = handle
+            process.standardInput = FileHandle.nullDevice
+            try process.run()
+            process.waitUntilExit()
+            handle.closeFile()
+            let output = (try? String(contentsOf: logURL, encoding: .utf8))?
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            if process.terminationStatus == 0 {
+                dlog("[agentbar] bridge synced to \(destination.path)")
+            } else {
+                let detail = output.isEmpty ? "no output" : output
+                dlog("[agentbar] bridge sync failed (\(process.terminationStatus)): \(detail)")
+            }
+        } catch {
+            dlog("[agentbar] bridge sync failed to start: \(error.localizedDescription)")
+        }
+    }
+
+    private func bundledBridgeDirectory() -> URL? {
+        for url in bundledResourceCandidates(["bridge"], isDirectory: true) {
+            let script = url.appendingPathComponent("dsh-bridge.mjs", isDirectory: false)
+            if FileManager.default.fileExists(atPath: script.path) {
+                return url
+            }
+        }
+        return nil
+    }
+
+    private func bundledBridgeSyncScript() -> URL? {
+        for url in bundledResourceCandidates(["tools", "sync-bundled-bridge.sh"], isDirectory: false) {
+            if FileManager.default.fileExists(atPath: url.path) {
+                return url
+            }
+        }
+        return nil
+    }
+
+    /// One path component at a time. A slash inside a single component is
+    /// percent-encoded by URL and would miss the file in the bundle.
+    private func bundledResourceCandidates(_ components: [String], isDirectory: Bool) -> [URL] {
+        func append(_ base: URL) -> URL {
+            var url = base
+            for (index, component) in components.enumerated() {
+                let directory = isDirectory || index < components.count - 1
+                url = url.appendingPathComponent(component, isDirectory: directory)
+            }
+            return url
+        }
+        var urls: [URL] = []
+        if let resources = Bundle.main.resourceURL {
+            urls.append(append(resources))
+        }
+        let bundle = Bundle.main.bundleURL
+        if bundle.pathExtension == "app" {
+            let resources = append(bundle
+                .appendingPathComponent("Contents", isDirectory: true)
+                .appendingPathComponent("Resources", isDirectory: true))
+            urls.append(resources)
+        }
+        return urls
     }
 
     private func ensureBridgeRunning() {

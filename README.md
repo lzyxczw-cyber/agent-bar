@@ -6,9 +6,9 @@
 
 ## 安装
 
-这棵源码的 bundle 版本是 **v0.3.6**。已经打过 tag 的安装包仍是 [GitHub Release v0.3.4](https://github.com/lzyxczw-cyber/agent-bar/releases/tag/v0.3.4)；更新的 DMG 要等下次打 `v*` tag 才会出现在 Releases 里。应用内更新检查看的是这个 Release，不会提前假设还没发布的包。
+这棵源码的 bundle 版本是 **v0.3.6**。当前已发布的安装包是 [GitHub Release v0.3.6](https://github.com/lzyxczw-cyber/agent-bar/releases/tag/v0.3.6) 的官方 `Agent-Bar-0.3.6.dmg`。应用内更新检查看的是 GitHub `releases/latest`，不会覆盖正在运行的 App。
 
-- DMG：上面的 v0.3.4 Release（当前已发布的安装包）
+- DMG：上面的 v0.3.6 Release（当前已发布的安装包，官方 `Agent-Bar-0.3.6.dmg`）
 - Homebrew：仓库里的 cask 没有单独的 tap，它直接下载已发布 Release 里的 DMG。在克隆下来的 `agent-bar` 目录执行：
 
 ```bash
@@ -16,6 +16,12 @@ brew install --cask ./Casks/agent-bar.rb
 ```
 
 日常使用建议装这个已签名公证的 DMG。下面的 `./build.sh` 是从源码构建。
+
+从这棵源码打包的 App 把 DSH bridge（`dsh-bridge.mjs`、`lib/`、`vendor/`）放进 `Contents/Resources/bridge/`。第一次打开，以及之后每次打开，都会把这份程序同步到 `~/Library/Application Support/AgentBar/bridge/`，再从那里启动。只安装 App/DMG、没有仓库、也没有先跑过 `./start.sh`，这个目录里也会有 `dsh-bridge.mjs`。同步只更新程序文件。`status.json`、`control/`（含 token）、`audit.log`、`usage-state.json` 留在原处。
+
+本机仍使用已经安装的 Node（≥20）。找不到 Node 时日志是 `node not found`，栏上保持「演示」。DSH 没在跑或还没登录时也是演示，这是原有设计。
+
+已经发布的 v0.3.6 DMG 是这次改动之前打的包，里面还没有随 App 安装 bridge。那一版如果只装 DMG、没跑过 `./start.sh`，打开后仍会停在演示。
 
 > 公开仓库不附带带本机桌面背景的截图，避免泄露私人窗口内容。这台云环境也不能运行 macOS App，所以这里没有补产品截图。
 
@@ -124,11 +130,13 @@ brew install --cask ./Casks/agent-bar.rb
 ## 实时数据（DSH bridge + 外部 agent）
 
 `bridge/` 是本地 Node 桥（Node ≥20，无第三方依赖）。实时 feed 默认只读；另有一个**本机控制通道**，
-只允许回答已经 pending 的 `approval/request`（`allowed-once` / `rejected`）和能校验的 `user-questions/request`。App 启动时同步到：
+只允许回答已经 pending 的 `approval/request`（`allowed-once` / `rejected`）和能校验的 `user-questions/request`。
+打开打包好的 App 时，会把 bundle 里的 bridge 同步到：
 
 `~/Library/Application Support/AgentBar/bridge/`
 
-（避免 `~/Documents` 的 TCC 权限弹窗；仓库 `bridge/` 是源目录，`start.sh` 每次同步。）
+仓库里的 `bridge/` 是源目录。`./start.sh` 是开发路径，从仓库同步到同一目录；正式安装不需要先跑它。
+运行副本放在 Application Support，App 因此不需要「文稿」权限。同步留着 `status.json`、`control/`、`audit.log`、`usage-state.json`。
 
 - 读取 `~/.dsh/.credentials.yaml` 的 browser-session secret，在内存中自签 DSH Web 会话 Cookie（不写 DSH 配置）；
 - session/list + session/page + WebSocket remote 事件流；
@@ -166,7 +174,7 @@ bridge 每 tick 扫描一次；120s 无心跳隐藏，文件删除即移除。�
 
 ### 本机桌面 App adapter（Codex / Grok Bot / WorkBuddy / Hermes）
 
-直接双击 App 或走 `start.sh` 都会自动启动 `tools/agentbar-app-adapters.mjs`（脚本打包在 App 的 Resources 里），只读取本机 App 的本地状态，不修改 App。
+打开打包好的 App，或走 `start.sh`，都会自动启动 `tools/agentbar-app-adapters.mjs`（脚本打包在 App 的 Resources 里），只读取本机 App 的本地状态，不修改 App。DSH bridge 同样随这个 App 启动：程序在 `Resources/bridge/`，运行副本在 Application Support。
 
 **同一 App 只占一个图标/一个父行**，最多 3 个活跃会话收进 `sessions` 数组；选中父行后在面板里展开子会话。父行右侧的 ↗ 按钮、或在栏上双击该 App 的图标，会切到对应 App。设置 → Adapter 控制 可打开 adapter 日志或重启 watcher。
 
@@ -204,14 +212,14 @@ App 退出后 adapter 会自动移除对应图标。
 
 ```bash
 cd agent-bar
-./build.sh        # 编译 + 打包 Agent Bar.app
-./start.sh        # 同步 bridge 到 Application Support 并启动
-# 直接双击 Agent Bar.app 也可以：bridge 和本机 App adapter 都会自动启动
+./build.sh        # 编译 + 打包 Agent Bar.app（bridge 在 Contents/Resources/bridge）
+./start.sh        # 开发路径：从仓库同步 bridge 到 Application Support 并启动
+# 打开打好的 Agent Bar.app 也会从包内 bridge 同步到同一目录再启动
 ./status.sh       # 进程 + feed 摘要
 ./stop.sh         # 停止 App 与 bridge
 ```
 
-不修改系统设置；退出后原生菜单栏立即恢复。演示模式只在确实没有实时数据时使用（bridge 没连上、或还没发现 DSH），内置 5 个 agent 和一条演示审批。右栏 chip 显示 `演示` / `实时` / `离线`。若已经发现 DSH，但 `session/list` 的协议对不上，chip 和面板显示 **协议不匹配**，不会改回演示数据。
+不修改系统设置；退出后原生菜单栏立即恢复。演示模式只在确实没有实时数据时使用（bridge 没连上、Node 不在、或还没发现 DSH），内置 5 个 agent 和一条演示审批。右栏 chip 显示 `演示` / `实时` / `离线`。若已经发现 DSH，但 `session/list` 的协议对不上，chip 和面板显示 **协议不匹配**，不会改回演示数据。
 
 ## 实现要点
 
@@ -222,7 +230,7 @@ cd agent-bar
 - 光标跟随：全局/本地 `mouseMoved` 监听即时响应，只保留 1Hz 定时器兜底（原来 20Hz 常驻轮询，空闲时约 8% CPU → 现在 ~2.5%）。
 - 面板：560×500，**顶边紧贴栏底（1pt）**，展开时像从刘海里长出来；阴影交给窗口（`hasShadow`）
   由系统按圆角 alpha 形状合成，不再手动画、也不再需要透明的阴影留白（留白会吞掉点击）。
-- bridge 子进程通过 `/bin/sh` + shell 重定向启动；20s 看门狗。
+- 打包后的 App 在启动时用 `tools/sync-bundled-bridge.sh` 把 `Resources/bridge/` 同步到 Application Support，再从那里拉起 bridge 子进程（`/bin/sh` + shell 重定向，20s 看门狗）。本机 Node 缺失时日志是 `node not found`。
 - 主线程卡死 >20s 自动退出，避免菜单栏一直被盖住（退出前先杀掉 bridge，否则 `exit(0)` 绕过
   `applicationWillTerminate` 会留下一个空转的 bridge）。
 - 光标监听做 8ms 节流；日志超过 2MB 时启动轮转到 `/tmp/agentbar.log.1`。
@@ -262,11 +270,12 @@ NOTARIZE=1 NOTARY_PROFILE="agentbar-notary" ./package.sh
 
 - `package.sh` 会在 `/tmp` 里的 staging 目录重新签名再打 DMG，绕开 `~/Documents` 的 File Provider
   扩展属性问题，DMG 内的 App 签名是有效的。
-- **Developer ID / 公证（已完成）**：已发布的 `Agent-Bar-0.3.4.dmg` 已用
+- **Developer ID / 公证（已完成）**：已发布的 `Agent-Bar-0.3.6.dmg` 已用
   Developer ID 签名并公证（Accepted + stapled），
   Gatekeeper 显示 `source=Notarized Developer ID`。签名/公证流水线见
-  [docs/SIGNING.md](docs/SIGNING.md)。源码版本升到 0.3.5 之后，新的 DMG 要等下一次 `v*` tag。
-- **Homebrew**：`Casks/agent-bar.rb` 仍指向已发布的 0.3.4 DMG；`v*` tag 的 release workflow 会构建 DMG、
+  [docs/SIGNING.md](docs/SIGNING.md)。
+- `build.sh` 把 bridge 程序和 `tools/sync-bundled-bridge.sh` 放进 App，`package.sh` 再按原来的身份和参数签名、打 DMG。
+- **Homebrew**：`Casks/agent-bar.rb` 指向已发布的 0.3.6 DMG；`v*` tag 的 release workflow 会构建 DMG、
   用 `tools/update-cask.sh` 自动回写 cask 校验和并上传 release。公开仓库后：
   ```bash
   brew install --cask ./Casks/agent-bar.rb
@@ -303,7 +312,7 @@ agent-bar/
 ├── AppDelegate.swift      窗口、feed、审批、adapter 自启动
 ├── ReleaseUpdate.swift    GitHub Release 检查与通知授权状态
 ├── bridge/                DSH 桥（feed 只读 + 审批控制）+ translate + 外部 agent 合并
-├── tools/                 agentbar-report.mjs、adapter 安装/本机 App watcher、鼠标/键盘自动化
+├── tools/                 agentbar-report.mjs、adapter、sync-bundled-bridge.sh、鼠标/键盘自动化
 ├── tests/                 纯函数测试（./tests/run.sh）
 ├── docs/                  ROADMAP.md（交接与下一步）+ SIGNING.md（签名/公证排查）；公开树里没有产品截图
 ├── Casks/                 Homebrew cask
