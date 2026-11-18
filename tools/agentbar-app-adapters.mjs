@@ -21,12 +21,15 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import {
   aggregateApp,
+  codexStandbyStatus,
+  grokActivityStatus,
   hermesIdleReport,
   hermesMessageSelect,
   hermesSessionSelect,
   inferHermesRunning,
   latestHermesMessages,
-  normalizeHermesSession
+  normalizeHermesSession,
+  workbuddyStandbyStatus
 } from './lib/adapter-logic.mjs';
 
 const HOME = os.homedir();
@@ -193,14 +196,17 @@ const CODEX_APP = '/Applications/ChatGPT.app/Contents/MacOS/ChatGPT';
 function codexIdleReport() {
   const last = sqliteJSON(CODEX_DB,
     "select thread_id, status, started_at, completed_at from thread_turns order by started_at desc limit 1;")[0];
+  const now = Date.now();
+  const status = codexStandbyStatus(last, now);
+  const tool = status === 'done' ? '本轮完成' : (status === 'failed' ? '失败' : '空闲');
   return {
     id: 'codex',
     name: 'Codex',
-    status: 'done',
+    status,
     project: 'Codex',
-    tool: '空闲',
+    tool,
     detail: last ? last.status : null,
-    startedAt: last && last.started_at ? Number(last.started_at) * 1000 : Date.now()
+    startedAt: last && last.started_at ? Number(last.started_at) * 1000 : now
   };
 }
 
@@ -381,13 +387,15 @@ function workbuddyReports() {
   if (reports.length > 0) return reports;
   const last = traces[0];
   const trace = last ? readTraceStart(last.file) : null;
+  const now = Date.now();
+  const status = workbuddyStandbyStatus(trace, now);
   return [{
     id: 'workbuddy',
     name: 'WorkBuddy',
-    status: 'done',
+    status,
     project: 'WorkBuddy',
-    tool: '空闲',
-    startedAt: trace && trace.startedAt ? Date.parse(trace.startedAt) : Date.now()
+    tool: status === 'done' ? '本轮完成' : '空闲',
+    startedAt: trace && trace.startedAt ? Date.parse(trace.startedAt) : now
   }];
 }
 
@@ -439,18 +447,21 @@ function grokReports() {
       ? entries.some((entry) => entry && entry.role === 'assistant' && entry.requestId === latestSend.requestId)
       : true;
     const streaming = entries.some((entry) => entry && entry.isStreaming === true);
-    const sendFresh = latestSend && latestSend.timestampMs
-      ? Date.now() - Number(latestSend.timestampMs) < 3 * 60 * 1000
-      : false;
-    const running = streaming || (latestSend && !assistantForLatest && sendFresh);
+    const now = Date.now();
+    const activity = grokActivityStatus({
+      streaming,
+      sentAt: latestSend ? latestSend.timestampMs : null,
+      assistantReplied: assistantForLatest,
+      now
+    });
     const agentName = assistant && assistant.toAgent && assistant.toAgent.name ? assistant.toAgent.name : null;
     const base = {
       name: 'Grok Bot',
       project: agentName || 'Grok Bot',
       detail: latestUser ? compact(latestUser.content, 200) : null,
-      startedAt: latestSend && latestSend.timestampMs ? Number(latestSend.timestampMs) : Date.now()
+      startedAt: latestSend && latestSend.timestampMs ? Number(latestSend.timestampMs) : now
     };
-    if (running) {
+    if (activity === 'running') {
       reports.push({
         ...base,
         id: parsed.id,
@@ -460,7 +471,12 @@ function grokReports() {
       });
       if (reports.length >= 3) break;
     } else if (!idle) {
-      idle = { ...base, id: 'grok', status: 'done', tool: '空闲' };
+      idle = {
+        ...base,
+        id: 'grok',
+        status: activity,
+        tool: activity === 'done' ? '本轮完成' : '空闲'
+      };
     }
   }
   if (reports.length > 0) return reports;
@@ -499,7 +515,7 @@ function hermesReports() {
   const messages = messageSQL ? latestHermesMessages(sqliteJSON(db, messageSQL)) : {};
   const now = Date.now();
   const running = inferHermesRunning(sessionRows, messages, now, 3);
-  return running.length > 0 ? running : [hermesIdleReport(sessionRows, now)];
+  return running.length > 0 ? running : [hermesIdleReport(sessionRows, now, messages)];
 }
 
 // MARK: main

@@ -164,7 +164,7 @@ Field notes:
 | --- | --- |
 | `dsh.connected` | HTTP polling to DSH is working |
 | `dsh.eventsConnected` | live `$events` WebSocket is attached (approvals arrive only while true) |
-| `agents[].status` | `approval` (pending approval/question), `running` (turn executing), `idle` |
+| `agents[].status` | DSH rows: `approval` (pending approval/question), `running` (turn executing), `idle` (not executing). The menu bar shows `idle` as 待命, not as a completed round. External rows in the same array may also be `waiting`, `done` (this round ended), or `failed` |
 | `agents[].busy` | turn is executing (independent of approval status) |
 | `agents[].tool` / `detail` | current in-flight tool call + one-line argument summary, or null between tool calls |
 | `agents[].approvals[]` | pending approval/question requests; `command` is the tool command when known, else the reason |
@@ -547,7 +547,7 @@ the reporter CLI).
 | --- | --- | --- |
 | `id` | string | falls back to the file name; final feed id is `"ext:<id>"` |
 | `name` | string | display name, defaults to `id` |
-| `status` | string | one of `running` / `waiting` / `done` / `failed`; anything else is treated as `idle` |
+| `status` | string | `idle` (待命, has not started), `running`, `waiting`, `done` (this round ended), `failed`. Anything else is `idle`, not `done` |
 | `project` / `tool` / `detail` | string | shown as-is; `tool`/`detail` are the "current action" line |
 | `thought` | string | latest reasoning; translated to `thoughtZh` when §10 is on |
 | `tokens` | number | optional token counter |
@@ -556,7 +556,7 @@ the reporter CLI).
 | `approvals[]` | array | normalized to `{id, kind:"approval", tool, command, reason, createdAt}`; **display-only** — the bridge's control channel only answers DSH approval events, not external reports. Codex, Claude Code, WorkBuddy, Grok Bot, and Hermes have no safe local write path from this process (token + still-pending id), so the panel does not offer Allow |
 | `process[]` | array | last 10 steps kept as `{kind, label, detail, at}` |
 | `appBundleID` | string | optional macOS bundle id; the notch uses it for "open app" / double-click |
-| `sessions[]` | array | optional child sessions, normalized to `{id, project, tool, detail, status, startedAt, updatedAt, tokens, thought}`; the notch shows them under the parent row |
+| `sessions[]` | array | optional child sessions, normalized to `{id, project, tool, detail, status, startedAt, updatedAt, tokens, thought}`; unknown session status is `idle`, not `done`. The notch shows them under the parent row |
 
 ### 11.2 How rows are merged into `status.json`
 

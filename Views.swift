@@ -282,6 +282,7 @@ extension AgentStatus {
     /// Manifest set name for this status. Idle-only deliveries fall back to `idle`.
     var iconSetName: String {
         switch self {
+        case .idle: return "idle"
         case .running: return "running"
         case .waiting: return "waiting"
         case .done: return "done"
@@ -563,6 +564,7 @@ struct NotchShape: Shape {
 struct StatusDot: View {
     let color: Color
     let animated: Bool
+    var diameter: CGFloat = 6
     @State private var pulse = false
 
     var body: some View {
@@ -570,11 +572,14 @@ struct StatusDot: View {
             if animated {
                 Circle()
                     .stroke(color.opacity(0.5), lineWidth: 1)
-                    .frame(width: 6, height: 6)
+                    .frame(width: diameter, height: diameter)
                     .scaleEffect(pulse ? 2.6 : 1.0)
                     .opacity(pulse ? 0.0 : 0.9)
             }
-            Circle().fill(color).frame(width: 6, height: 6)
+            Circle()
+                .fill(color)
+                .frame(width: diameter, height: diameter)
+                .overlay(Circle().stroke(Color.black.opacity(0.65), lineWidth: 0.6))
         }
         .onAppear {
             guard animated else { return }
@@ -582,6 +587,19 @@ struct StatusDot: View {
                 pulse = true
             }
         }
+    }
+}
+
+/// Bottom-trailing status mark drawn by the app. Running reuses the pulse;
+/// the other states stay a solid dot. This is not part of the icon art.
+struct AgentStatusMark: View {
+    let color: Color
+    var pulsing: Bool = false
+
+    var body: some View {
+        StatusDot(color: color, animated: pulsing, diameter: 4.5)
+            .id(pulsing)
+            .offset(x: 0.5, y: 0.5)
     }
 }
 
@@ -708,11 +726,10 @@ struct SelectedRailIcon: View {
             AgentGlyph(name: agent.name, seed: agent.id, live: live, status: agent.status, size: 18, phase: phase)
                 .padding(2.5)
                 .scaleEffect(iconScale)
-            Circle()
-                .fill(agent.status.color)
-                .frame(width: 4.5, height: 4.5)
-                .overlay(Circle().stroke(Color.black.opacity(0.65), lineWidth: 0.6))
-                .offset(x: 0.5, y: 0.5)
+            AgentStatusMark(
+                color: agent.status.color,
+                pulsing: agent.status == .running && !reduceMotion
+            )
             if !reduceMotion {
                 BurstOverlay(color: agent.status.color)
             }
@@ -773,11 +790,10 @@ struct SelectedAgentUnit: View {
                 AgentGlyph(name: agent.name, seed: agent.id, live: live, status: agent.status, size: 18, phase: phase)
                     .padding(2.5)
                     .scaleEffect(iconScale)
-                Circle()
-                    .fill(agent.status.color)
-                    .frame(width: 4.5, height: 4.5)
-                    .overlay(Circle().stroke(Color.black.opacity(0.65), lineWidth: 0.6))
-                    .offset(x: 0.5, y: 0.5)
+                AgentStatusMark(
+                    color: agent.status.color,
+                    pulsing: agent.status == .running && !reduceMotion
+                )
                 if !reduceMotion {
                     BurstOverlay(color: agent.status.color)
                         .id(agent.id)
@@ -842,11 +858,10 @@ struct BarView: View {
                 )
             AgentGlyph(name: agent.name, seed: agent.id, live: store.isLive, status: agent.status, size: 18, phase: indexOf(agent))
                 .padding(2.5)
-            Circle()
-                .fill(agent.status.color)
-                .frame(width: 4.5, height: 4.5)
-                .overlay(Circle().stroke(Color.black.opacity(0.65), lineWidth: 0.6))
-                .offset(x: 0.5, y: 0.5)
+            AgentStatusMark(
+                color: agent.status.color,
+                pulsing: agent.status == .running && !reduceMotion
+            )
         }
         .frame(width: railAvatarSize, height: railAvatarSize)
         .opacity(isHovered ? 0.95 : 0.62)

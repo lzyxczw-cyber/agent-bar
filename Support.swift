@@ -145,17 +145,56 @@ func agentIconID(for agentName: String, seed: String = "", live: Bool = false) -
 /// A manifest `suggestedIntervalSec` wins when that set provides one, so an
 /// idle-only delivery shares the idle cadence for every status. Otherwise the
 /// historical per-status intervals remain: running 0.45, waiting 0.70,
-/// done 1.70, failed 1.20.
+/// idle 0.70, done 1.70, failed 1.20.
 func agentIconInterval(forStatus status: String, suggestedIntervalSec: Double?) -> Double {
     if let suggested = suggestedIntervalSec, suggested.isFinite, suggested > 0 {
         return suggested
     }
     switch status {
     case "running": return 0.45
-    case "waiting": return 0.70
+    case "waiting", "idle": return 0.70
     case "done": return 1.70
     case "failed": return 1.20
     default: return 0.70
+    }
+}
+
+/// RGB for a menu-bar status. The three main states stay visually apart:
+/// 待命 is gray, 运行 is blue, 完成 is green. 待审批 stays orange and 失败 stays red.
+struct AgentStatusPaint: Equatable {
+    var red: Double
+    var green: Double
+    var blue: Double
+    var color: Color { Color(red: red, green: green, blue: blue) }
+}
+
+func agentStatusPaint(_ status: String) -> AgentStatusPaint {
+    switch status {
+    case "running":
+        return AgentStatusPaint(red: 0.36, green: 0.78, blue: 1.00)
+    case "waiting":
+        return AgentStatusPaint(red: 1.00, green: 0.72, blue: 0.28)
+    case "done":
+        return AgentStatusPaint(red: 0.36, green: 0.86, blue: 0.60)
+    case "failed":
+        return AgentStatusPaint(red: 1.00, green: 0.44, blue: 0.44)
+    default:
+        return AgentStatusPaint(red: 0.62, green: 0.64, blue: 0.68)
+    }
+}
+
+/// Feed token for a raw status string.
+///
+/// `done` is the only finished-round token. `idle`, blank, and unknown values
+/// stay `idle` so a standby agent is not reported as completed.
+func canonicalAgentFeedStatus(_ raw: String?) -> String {
+    let value = raw?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
+    switch value {
+    case "running": return "running"
+    case "approval", "waiting": return "waiting"
+    case "failed": return "failed"
+    case "done": return "done"
+    default: return "idle"
     }
 }
 

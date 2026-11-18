@@ -2,13 +2,18 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   aggregateApp,
+  codexStandbyStatus,
+  grokActivityStatus,
   hermesIdleReport,
+  hermesIdleStatus,
   hermesMessageSelect,
   hermesSessionSelect,
   hermesTimestampMs,
   inferHermesRunning,
   latestHermesMessages,
-  normalizeHermesSession
+  normalizeHermesSession,
+  standbyParentStatus,
+  workbuddyStandbyStatus
 } from '../tools/lib/adapter-logic.mjs';
 import { applyUsageTick, usageTotal } from '../bridge/lib/usage.mjs';
 
@@ -152,8 +157,14 @@ test('hermes running sessions are inferred, capped, and skip ended or stale rows
 
   const idle = hermesIdleReport(sessions, NOW);
   assert.equal(idle.id, 'hermes');
-  assert.equal(idle.status, 'done');
+  assert.equal(idle.status, 'idle');
   assert.equal(idle.tool, '空闲');
+
+  const quiet = { 'sess-old': { at: NOW - 2 * 60 * 1000 } };
+  assert.equal(hermesIdleReport(sessions, NOW, quiet).status, 'done');
+  assert.equal(hermesIdleReport(sessions, NOW, { 'sess-old': { at: NOW - 10 * 60 * 1000 } }).status, 'idle');
+  assert.equal(hermesIdleStatus(NOW - 30 * 1000, NOW), 'running');
+  assert.equal(hermesIdleStatus(null, NOW), 'idle');
 });
 
 test('aggregateApp keeps one parent and at most three child sessions', () => {
@@ -175,8 +186,36 @@ test('aggregateApp keeps one parent and at most three child sessions', () => {
   assert.equal(parent.tokens, 10);
   assert.equal(parent.appBundleID, null);
 
-  const idle = aggregateApp(adapter, [{ id: 'hermes', status: 'done', project: 'Hermes', tool: '空闲', startedAt: 5 }]);
-  assert.equal(idle.status, 'done');
+  const idle = aggregateApp(adapter, [{ id: 'hermes', status: 'idle', project: 'Hermes', tool: '空闲', startedAt: 5 }]);
+  assert.equal(idle.status, 'idle');
   assert.deepEqual(idle.sessions, []);
+  const finished = aggregateApp(adapter, [{ id: 'hermes', status: 'done', project: 'Hermes', tool: '本轮完成', startedAt: 5 }]);
+  assert.equal(finished.status, 'done');
+  const failed = aggregateApp(adapter, [{ id: 'hermes', status: 'failed', project: 'Hermes', tool: '失败', startedAt: 5 }]);
+  assert.equal(failed.status, 'failed');
+  assert.equal(standbyParentStatus('idle'), 'idle');
+  assert.equal(standbyParentStatus('done'), 'done');
+  assert.equal(standbyParentStatus(''), 'idle');
+  assert.equal(standbyParentStatus(undefined), 'idle');
   assert.equal(aggregateApp(adapter, []), null);
+});
+
+test('standby is idle unless a round just ended', () => {
+  assert.equal(codexStandbyStatus(null, NOW), 'idle');
+  assert.equal(codexStandbyStatus({ status: 'completed', completed_at: (NOW - 60 * 1000) / 1000 }, NOW), 'done');
+  assert.equal(codexStandbyStatus({ status: 'completed', completed_at: (NOW - 60 * 60 * 1000) / 1000 }, NOW), 'idle');
+  assert.equal(codexStandbyStatus({ status: 'failed', completed_at: (NOW - 30 * 1000) / 1000 }, NOW), 'failed');
+  assert.equal(codexStandbyStatus({ status: 'completed' }, NOW), 'idle');
+  assert.equal(codexStandbyStatus({ status: 'inProgress', completed_at: (NOW - 10 * 1000) / 1000 }, NOW), 'idle');
+
+  assert.equal(workbuddyStandbyStatus(null, NOW), 'idle');
+  assert.equal(workbuddyStandbyStatus({ endedAt: null }, NOW), 'idle');
+  assert.equal(workbuddyStandbyStatus({ endedAt: new Date(NOW - 60 * 1000).toISOString() }, NOW), 'done');
+  assert.equal(workbuddyStandbyStatus({ endedAt: new Date(NOW - 60 * 60 * 1000).toISOString() }, NOW), 'idle');
+
+  assert.equal(grokActivityStatus({ streaming: true, now: NOW }), 'running');
+  assert.equal(grokActivityStatus({ sentAt: NOW - 20 * 1000, assistantReplied: false, now: NOW }), 'running');
+  assert.equal(grokActivityStatus({ sentAt: NOW - 20 * 1000, assistantReplied: true, now: NOW }), 'done');
+  assert.equal(grokActivityStatus({ sentAt: NOW - 10 * 60 * 1000, assistantReplied: true, now: NOW }), 'idle');
+  assert.equal(grokActivityStatus({ now: NOW }), 'idle');
 });

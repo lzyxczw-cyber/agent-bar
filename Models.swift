@@ -8,10 +8,11 @@ import CoreWLAN
 import UserNotifications
 
 enum AgentStatus {
-    case running, waiting, done, failed
+    case idle, running, waiting, done, failed
 
     var label: String {
         switch self {
+        case .idle: return "待命"
         case .running: return "运行中"
         case .waiting: return "待审批"
         case .done: return "已完成"
@@ -19,12 +20,14 @@ enum AgentStatus {
         }
     }
 
+    /// Shared with the bottom-trailing dot. 待命 is gray, 运行 is blue, 完成 is green.
     var color: Color {
         switch self {
-        case .running: return Color(red: 0.36, green: 0.78, blue: 1.00)
-        case .waiting: return Color(red: 1.00, green: 0.72, blue: 0.28)
-        case .done: return Color(red: 0.36, green: 0.86, blue: 0.60)
-        case .failed: return Color(red: 1.00, green: 0.44, blue: 0.44)
+        case .idle: return agentStatusPaint("idle").color
+        case .running: return agentStatusPaint("running").color
+        case .waiting: return agentStatusPaint("waiting").color
+        case .done: return agentStatusPaint("done").color
+        case .failed: return agentStatusPaint("failed").color
         }
     }
 }
@@ -48,12 +51,15 @@ struct AgentSession: Identifiable {
 }
 
 extension AgentStatus {
+    /// Map a live-feed or child-session status.
+    /// An explicit `done` is a finished round. Idle and unknown values are 待命.
     static func external(_ raw: String?) -> AgentStatus {
-        switch raw {
-        case "approval", "waiting": return .waiting
+        switch canonicalAgentFeedStatus(raw) {
         case "running": return .running
+        case "waiting": return .waiting
         case "failed": return .failed
-        default: return .done
+        case "done": return .done
+        default: return .idle
         }
     }
 }
@@ -332,6 +338,13 @@ final class DemoStore: ObservableObject {
             case .waiting:
                 if tick % 37 == 0 {
                     agents[i].tool = toolPool[Int.random(in: 0..<toolPool.count)]
+                }
+            case .idle:
+                if tick % 17 == 0 {
+                    agents[i].status = .running
+                    agents[i].tool = toolPool[Int.random(in: 0..<toolPool.count)]
+                    agents[i].startedAt = now
+                    agents[i].note = nil
                 }
             }
         }
