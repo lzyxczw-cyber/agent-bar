@@ -16,6 +16,15 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources/tools" "$APP/Contents/Resources/bridge"
 cp agentbar "$APP/Contents/MacOS/AgentBar"
 cp tools/agentbar-app-adapters.mjs "$APP/Contents/Resources/tools/agentbar-app-adapters.mjs"
+# The watcher imports ./lib/adapter-logic.mjs. A DMG install has no repo
+# beside the app; without this file it exits immediately (ERR_MODULE_NOT_FOUND)
+# and Codex / WorkBuddy / Grok Bot / Hermes never appear. DSH does not use it.
+mkdir -p "$APP/Contents/Resources/tools/lib"
+cp -R tools/lib/. "$APP/Contents/Resources/tools/lib/"
+if [ ! -f "$APP/Contents/Resources/tools/lib/adapter-logic.mjs" ]; then
+  echo "error: $APP is missing Contents/Resources/tools/lib/adapter-logic.mjs" >&2
+  exit 1
+fi
 
 # The released app has no repo checkout beside it. Ship the DSH bridge
 # program inside the bundle; the app copies it to Application Support

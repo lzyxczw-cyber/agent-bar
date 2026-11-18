@@ -214,8 +214,41 @@ test('build.sh and start.sh both install through the sync script', () => {
   const start = fs.readFileSync(path.join(ROOT, 'start.sh'), 'utf8');
   assert.match(build, /sync-bundled-bridge\.sh bridge "\$APP\/Contents\/Resources\/bridge"/);
   assert.match(build, /Contents\/Resources\/tools\/sync-bundled-bridge\.sh/);
+  assert.match(build, /cp tools\/agentbar-app-adapters\.mjs "\$APP\/Contents\/Resources\/tools\/agentbar-app-adapters\.mjs"/);
+  assert.match(build, /cp -R tools\/lib\/\. "\$APP\/Contents\/Resources\/tools\/lib\/"/);
+  assert.match(build, /\[ ! -f "\$APP\/Contents\/Resources\/tools\/lib\/adapter-logic\.mjs" \]/);
   assert.match(start, /sync-bundled-bridge\.sh "\$PWD\/bridge" "\$BRIDGE_DEST"/);
   assert.doesNotMatch(start, /rm\s+.*usage-state\.json/);
   assert.doesNotMatch(start, /rm\s+.*audit\.log/);
   assert.doesNotMatch(start, /rm\s+.*control/);
+});
+
+test('packaged adapter tools resolve ./lib/adapter-logic.mjs', () => {
+  const app = fs.mkdtempSync(path.join(os.tmpdir(), 'agentbar-adapter-bundle-'));
+  const toolsDir = path.join(app, 'Contents', 'Resources', 'tools');
+  fs.mkdirSync(path.join(toolsDir, 'lib'), { recursive: true });
+  fs.copyFileSync(
+    path.join(ROOT, 'tools', 'agentbar-app-adapters.mjs'),
+    path.join(toolsDir, 'agentbar-app-adapters.mjs')
+  );
+  fs.cpSync(path.join(ROOT, 'tools', 'lib'), path.join(toolsDir, 'lib'), { recursive: true });
+  const logic = path.join(toolsDir, 'lib', 'adapter-logic.mjs');
+  assert.equal(fs.existsSync(logic), true);
+
+  const resolved = spawnSync(process.execPath, [
+    '--input-type=module',
+    '-e',
+    "import './lib/adapter-logic.mjs'"
+  ], { cwd: toolsDir, encoding: 'utf8' });
+  assert.equal(resolved.status, 0, resolved.stderr);
+
+  fs.rmSync(logic);
+  const missing = spawnSync(process.execPath, [
+    '--input-type=module',
+    '-e',
+    "import './lib/adapter-logic.mjs'"
+  ], { cwd: toolsDir, encoding: 'utf8' });
+  assert.notEqual(missing.status, 0);
+  assert.match(missing.stderr, /ERR_MODULE_NOT_FOUND/);
+  fs.rmSync(app, { recursive: true, force: true });
 });
