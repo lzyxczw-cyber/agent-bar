@@ -20,7 +20,7 @@ ls ~/.dsh/.credentials.yaml   # 需要本机装过 DSH 并登录过（bridge 用
 
 日志：`/tmp/agentbar.log`、`/tmp/agentbar-bridge.log`；
 运行数据：`~/Library/Application Support/AgentBar/{bridge,agents}/`（**机器本地，不随仓库走**）。
-开发时 `./start.sh` 从仓库 `bridge/` 同步程序文件。打进 App 的包在每次启动时用 `tools/sync-bundled-bridge.sh` 把 `Contents/Resources/bridge/` 同步到同一目录，所以只装 DMG、没有仓库、也没跑过 `./start.sh` 时，`dsh-bridge.mjs` 也会出现在那里。两边都留下 `status.json`、`control/`、`audit.log`、`usage-state.json`。`start.sh` 在重启 bridge 前会删掉旧的 `status.json`，避免读到已经退出的进程快照。本机 Node 仍然要自己装；找不到时日志是 `node not found`，栏上保持演示。
+开发时 `./start.sh` 从仓库 `bridge/` 同步程序文件。打进 App 的包在每次启动时用 `tools/sync-bundled-bridge.sh` 把 `Contents/Resources/bridge/` 同步到同一目录，所以只装 DMG、没有仓库、也没跑过 `./start.sh` 时，`dsh-bridge.mjs` 也会出现在那里。两边都留下 `status.json`、`control/`、`audit.log`、`usage-state.json`。`start.sh` 在重启 bridge 前会删掉旧的 `status.json`，避免读到已经退出的进程快照。本机 Node 仍然要自己装；找不到时日志是 `node not found`，栏上保持演示。桌面 adapter 也要整份进包：`agentbar-app-adapters.mjs` 导入旁边的 `lib/adapter-logic.mjs`。已发布的 0.3.7 和 0.3.8 DMG 没有这个文件，adapter 以 `ERR_MODULE_NOT_FOUND` 退出，Codex / WorkBuddy / Grok Bot / Hermes 不出现；DSH 仍可用。`build.sh` 会复制 `tools/lib/`，缺了就失败。修好的官方 DMG 还没有。这次不升 bundle 版本，也不改已经指向 0.3.8 DMG 的 cask。
 
 **不要**绕过 `build.sh` 里的两处（见 §3）：`-target arm64-apple-macosx14.0` 和签名前的 `xattr -cr`。
 
@@ -137,6 +137,7 @@ otool -l agentbar | grep -A3 LC_BUILD_VERSION   # 期望 minos 14.0
 ## 4e. v0.3.8
 
 - **右上角网速上下两行**：bundle 版本升到 0.3.8，官方 `Agent-Bar-0.3.8.dmg` 已公证发布。网速改成上面下载、下面上传，来自 PR #8，用来省横向空间。这一版仍然包含 bundled DSH bridge，只装安装包也可以离开演示模式。v0.3.7 已打 tag。已经发布的 v0.3.7 DMG 是这次网速改动之前打的包，里面已经带上了 bridge。
+- **桌面 adapter 的依赖没打进包**：`agentbar-app-adapters.mjs` 导入 `./lib/adapter-logic.mjs`，但已发布的 0.3.7 和 0.3.8 官方 DMG 都没有 `Contents/Resources/tools/lib/adapter-logic.mjs`。watcher 报 `ERR_MODULE_NOT_FOUND` 后退出，Codex / WorkBuddy / Grok Bot / Hermes 不会出现；DSH bridge 不走这条路径。`build.sh` 会复制 `tools/lib/`，并在这个文件缺失时失败。修好的官方 DMG 还没有。这次不升 bundle 版本，也不改已经指向 0.3.8 DMG 的 cask。
 
 ## 5. 最近完成（时间线）
 
