@@ -6,10 +6,10 @@
 
 ## 安装
 
-这棵源码的 bundle 版本是 **v0.3.8**。当前已发布的安装包是 [GitHub Release v0.3.8](https://github.com/lzyxczw-cyber/agent-bar/releases/tag/v0.3.8) 的官方 `Agent-Bar-0.3.8.dmg`。这一版把右上角网速改成上下两行（上面下载、下面上传，来自 PR #8），并且仍然包含 v0.3.7 打进包的 DSH bridge。应用内更新检查看的是 GitHub `releases/latest`，不会覆盖正在运行的 App。
+这棵源码的 bundle 版本是 **v0.3.9**。当前已经发布、可以下载的安装包仍是 [GitHub Release v0.3.8](https://github.com/lzyxczw-cyber/agent-bar/releases/tag/v0.3.8) 的官方 `Agent-Bar-0.3.8.dmg`。这一版把右上角网速改成上下两行（上面下载、下面上传，来自 PR #8），并且仍然包含 v0.3.7 打进包的 DSH bridge，但和已发布的 0.3.7 一样漏了 `tools/lib/adapter-logic.mjs`。v0.3.9 是下一版官方安装包，也是会带上 `tools/lib/adapter-logic.mjs` 的版本。在 v0.3.9 的 GitHub Release 出现之前，安装链接仍指向 v0.3.8。应用内更新检查看的是 GitHub `releases/latest`，不会覆盖正在运行的 App。
 
-- DMG：上面的 v0.3.8 Release（当前已发布的安装包，官方 `Agent-Bar-0.3.8.dmg`）
-- Homebrew：仓库里的 cask 没有单独的 tap，它直接下载已发布 Release 里的 DMG。在克隆下来的 `agent-bar` 目录执行：
+- DMG：当前可安装的仍是 [v0.3.8 Release](https://github.com/lzyxczw-cyber/agent-bar/releases/tag/v0.3.8)（官方 `Agent-Bar-0.3.8.dmg`）。已发布的 0.3.7 和 0.3.8 官方 DMG 都漏了 `tools/lib/adapter-logic.mjs`。v0.3.9 是下一版官方包，会带上这个文件；GitHub Release 发布之后才会有 `Agent-Bar-0.3.9.dmg`。
+- Homebrew：仓库里的 cask 没有单独的 tap，它直接下载已发布 Release 里的 DMG。cask 的版本和 sha256 仍是 0.3.8，要等公证后的 v0.3.9 DMG 打出来再改。在克隆下来的 `agent-bar` 目录执行：
 
 ```bash
 brew install --cask ./Casks/agent-bar.rb
@@ -21,7 +21,7 @@ brew install --cask ./Casks/agent-bar.rb
 
 本机仍使用已经安装的 Node（≥20）。找不到 Node 时日志是 `node not found`，栏上保持「演示」。DSH 没在跑或还没登录时也是演示，这是原有设计。
 
-v0.3.6 已打 tag。已经发布的 v0.3.6 DMG 是 bundled-bridge 改动之前打的包，里面还没有随 App 安装 bridge。那一版如果只装 DMG、没跑过 `./start.sh`，打开后仍会停在演示。v0.3.7 已打 tag，官方 DMG 已把 bridge 打进 App，只装安装包就可以离开演示模式。v0.3.8 已打 tag，官方 DMG 把右上角网速改成上下两行（上面下载、下面上传，来自 PR #8），并且仍然包含这份 bridge。这两份已发布的官方 DMG 都漏了 `tools/lib/adapter-logic.mjs`，桌面 adapter 以 `ERR_MODULE_NOT_FOUND` 退出，Codex / WorkBuddy / Grok Bot / Hermes 不会出现；DSH 不受影响。源码里的 `build.sh` 会补上这个文件，对应的新公证 DMG 还没有。
+v0.3.6 已打 tag。已经发布的 v0.3.6 DMG 是 bundled-bridge 改动之前打的包，里面还没有随 App 安装 bridge。那一版如果只装 DMG、没跑过 `./start.sh`，打开后仍会停在演示。v0.3.7 已打 tag，官方 DMG 已把 bridge 打进 App，只装安装包就可以离开演示模式。v0.3.8 已打 tag，官方 DMG 把右上角网速改成上下两行（上面下载、下面上传，来自 PR #8），并且仍然包含这份 bridge。这两份已发布的官方 DMG 都漏了 `tools/lib/adapter-logic.mjs`，桌面 adapter 以 `ERR_MODULE_NOT_FOUND` 退出，Codex / WorkBuddy / Grok Bot / Hermes 不会出现；DSH 不受影响。源码里的 `build.sh` 会把这个文件打进包。v0.3.9 是下一版官方包，会带上 `tools/lib/adapter-logic.mjs`。在 v0.3.9 的 GitHub Release 发布之前，还没有可下载的 `Agent-Bar-0.3.9.dmg`，也还没有 v0.3.9 tag。
 
 > 公开仓库不附带带本机桌面背景的截图，避免泄露私人窗口内容。这台云环境也不能运行 macOS App，所以这里没有补产品截图。
 
@@ -174,7 +174,7 @@ bridge 每 tick 扫描一次；120s 无心跳隐藏，文件删除即移除。�
 
 ### 本机桌面 App adapter（Codex / Grok Bot / WorkBuddy / Hermes）
 
-打开打包好的 App，或走 `start.sh`，都会自动启动 `tools/agentbar-app-adapters.mjs`。脚本和它相对导入的 `tools/lib/adapter-logic.mjs` 一起打在 App 的 `Resources/tools/` 里，只读取本机 App 的本地状态，不修改 App。已发布的 `Agent-Bar-0.3.7.dmg` 和 `Agent-Bar-0.3.8.dmg` 漏了后者，watcher 以 `ERR_MODULE_NOT_FOUND` 立刻退出，Codex / WorkBuddy / Grok Bot / Hermes 不会出现。DSH bridge 不走这个脚本，同样随这个 App 启动：程序在 `Resources/bridge/`，运行副本在 Application Support。
+打开打包好的 App，或走 `start.sh`，都会自动启动 `tools/agentbar-app-adapters.mjs`。脚本和它相对导入的 `tools/lib/adapter-logic.mjs` 一起打在 App 的 `Resources/tools/` 里，只读取本机 App 的本地状态，不修改 App。已发布的 `Agent-Bar-0.3.7.dmg` 和 `Agent-Bar-0.3.8.dmg` 漏了后者，watcher 以 `ERR_MODULE_NOT_FOUND` 立刻退出，Codex / WorkBuddy / Grok Bot / Hermes 不会出现。v0.3.9 是下一版官方包，会带上 `tools/lib/adapter-logic.mjs`；v0.3.9 的 DMG、tag 和 GitHub Release 都还没有。DSH bridge 不走这个脚本，同样随这个 App 启动：程序在 `Resources/bridge/`，运行副本在 Application Support。
 
 **同一 App 只占一个图标/一个父行**，最多 3 个活跃会话收进 `sessions` 数组；选中父行后在面板里展开子会话。父行右侧的 ↗ 按钮、或在栏上双击该 App 的图标，会切到对应 App。设置 → Adapter 控制 可打开 adapter 日志或重启 watcher。
 
@@ -272,10 +272,11 @@ NOTARIZE=1 NOTARY_PROFILE="agentbar-notary" ./package.sh
   扩展属性问题，DMG 内的 App 签名是有效的。
 - **Developer ID / 公证（已完成）**：已发布的 `Agent-Bar-0.3.8.dmg` 已用
   Developer ID 签名并公证（Accepted + stapled），
-  Gatekeeper 显示 `source=Notarized Developer ID`，带上了右上角上下两行网速（上面下载、下面上传，来自 PR #8），并且仍然包含 bundled DSH bridge。签名/公证流水线见
+  Gatekeeper 显示 `source=Notarized Developer ID`，带上了右上角上下两行网速（上面下载、下面上传，来自 PR #8），并且仍然包含 bundled DSH bridge。
+  已发布的 0.3.7 和 0.3.8 官方 DMG 都漏了 `tools/lib/adapter-logic.mjs`。v0.3.9 是下一版要签名公证的官方包，它才会带上这个文件；在 v0.3.9 GitHub Release 出现之前，还没有 `Agent-Bar-0.3.9.dmg`。签名/公证流水线见
   [docs/SIGNING.md](docs/SIGNING.md)。
-- `build.sh` 把 bridge 程序、`tools/sync-bundled-bridge.sh` 和 `tools/lib/`（含 `adapter-logic.mjs`）放进 App。复制之后若缺少 `Contents/Resources/tools/lib/adapter-logic.mjs`，构建直接失败。`package.sh` 再按原来的身份和参数签名、打 DMG。已发布的 `Agent-Bar-0.3.7.dmg` 和 `Agent-Bar-0.3.8.dmg` 漏了这个文件，桌面 adapter 会以 `ERR_MODULE_NOT_FOUND` 退出；修好的官方 DMG 还没有。这次不升 bundle 版本，也不改 cask。
-- **Homebrew**：`Casks/agent-bar.rb` 指向已发布的 0.3.8 DMG；`v*` tag 的 release workflow 会构建 DMG、
+- `build.sh` 把 bridge 程序、`tools/sync-bundled-bridge.sh` 和 `tools/lib/`（含 `adapter-logic.mjs`）放进 App。复制之后若缺少 `Contents/Resources/tools/lib/adapter-logic.mjs`，构建直接失败。`package.sh` 再按原来的身份和参数签名、打 DMG。已发布的 `Agent-Bar-0.3.7.dmg` 和 `Agent-Bar-0.3.8.dmg` 漏了这个文件，桌面 adapter 会以 `ERR_MODULE_NOT_FOUND` 退出。v0.3.9 是下一版官方包，会带上 `tools/lib/adapter-logic.mjs`；这一版的 DMG、tag 和 GitHub Release 都还没有。这次不改 cask。
+- **Homebrew**：`Casks/agent-bar.rb` 仍指向已发布的 0.3.8 DMG，版本和 sha256 要等公证后的 v0.3.9 DMG 打出来再改。`v*` tag 的 release workflow 会构建 DMG、
   用 `tools/update-cask.sh` 自动回写 cask 校验和并上传 release。公开仓库后：
   ```bash
   brew install --cask ./Casks/agent-bar.rb
@@ -326,7 +327,7 @@ agent-bar/
 
 ## 接下来
 
-v0.3.4 有双向审批、一键接入、桌面 adapter、多显示器、用量趋势和签名公证。v0.3.5 加上 GitHub Release 更新检查和通知授权引导。v0.3.6 加上 Hermes 的本机 `state.db` 读取、把外部审批明确保持只读，并补了布局、用量累加、提问校验和 adapter 推断的测试。v0.3.6 已打 tag；当时发布的官方 DMG 是 bridge 打进包之前构建的。v0.3.7 把 DSH bridge（PR #6）放进了官方 DMG，只装安装包也能离开演示模式。v0.3.8 把右上角网速改成上下两行（上面下载、下面上传，来自 PR #8），并且仍然包含这份 bridge。已发布的 0.3.7 和 0.3.8 官方 DMG 都漏了 `tools/lib/adapter-logic.mjs`，桌面 adapter 起不来；这份源码的 `build.sh` 会把它打进包，但修好的官方 DMG 还没有。还没做的是：
+v0.3.4 有双向审批、一键接入、桌面 adapter、多显示器、用量趋势和签名公证。v0.3.5 加上 GitHub Release 更新检查和通知授权引导。v0.3.6 加上 Hermes 的本机 `state.db` 读取、把外部审批明确保持只读，并补了布局、用量累加、提问校验和 adapter 推断的测试。v0.3.6 已打 tag；当时发布的官方 DMG 是 bridge 打进包之前构建的。v0.3.7 把 DSH bridge（PR #6）放进了官方 DMG，只装安装包也能离开演示模式。v0.3.8 把右上角网速改成上下两行（上面下载、下面上传，来自 PR #8），并且仍然包含这份 bridge。已发布的 0.3.7 和 0.3.8 官方 DMG 都漏了 `tools/lib/adapter-logic.mjs`，桌面 adapter 起不来。v0.3.9 是下一版官方包，会带上 `tools/lib/adapter-logic.mjs`。v0.3.9 的 GitHub Release 还没发布，也还没有 v0.3.9 tag 或 `Agent-Bar-0.3.9.dmg`，当前可下载的安装包仍是 v0.3.8。还没做的是：
 
 - 新的 App 图标
 
