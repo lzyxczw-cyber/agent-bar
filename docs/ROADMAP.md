@@ -1,7 +1,7 @@
 # Agent Bar · 交接与下一步
 
-> 状态快照：**v0.3.6**，2026-11-17。当前 `main` 已从公开初始提交 `9186deb` 起步，并合并 PR #1（协议不匹配、问题答复、文档对齐）。v0.3.5 加了 GitHub Release 更新检查和通知授权引导。v0.3.6 加了 Hermes 本机读取，并确认外部审批保持只读。v0.3.6 已打 tag，安装包是 `Agent-Bar-0.3.6.dmg`；没有单独的 v0.3.5 tag 或安装包，更新检查和通知授权引导随 v0.3.6 发布。
-> bundle 版本见 `build.sh` 的 `CFBundleShortVersionString` / `CFBundleVersion`：`0.3.6`。
+> 状态快照：**v0.3.7**，2026-11-18。当前 `main` 已从公开初始提交 `9186deb` 起步，并合并 PR #1（协议不匹配、问题答复、文档对齐）和 PR #6（把 DSH bridge 打进 App，启动时同步到 Application Support）。v0.3.5 加了 GitHub Release 更新检查和通知授权引导。v0.3.6 加了 Hermes 本机读取，并确认外部审批保持只读。v0.3.6 已打 tag；已经发布的 `Agent-Bar-0.3.6.dmg` 是 bundled-bridge 改动之前打的包。没有单独的 v0.3.5 tag 或安装包，更新检查和通知授权引导随 v0.3.6 发布。v0.3.7 是把 DSH bridge 放进官方 DMG 的版本，只装安装包也能离开演示模式。v0.3.7 的 GitHub Release 还没有，当前可下载的安装包仍是 v0.3.6。
+> bundle 版本见 `build.sh` 的 `CFBundleShortVersionString` / `CFBundleVersion`：`0.3.7`。
 > 本机 `~/Documents` 的 File Provider 扩展属性会让本地 `codesign --verify` 失败（CI 不受影响）。
 > 这份文档按当前公开树校对，不沿用已删除仓库里的 v0.4.1-dev 说法。看完这一页就能接手。
 
@@ -67,7 +67,7 @@ ls ~/.dsh/.credentials.yaml   # 需要本机装过 DSH 并登录过（bridge 用
 | 签名 / 公证 | ✅ 已用 Developer ID 签名并通过 Apple 公证（Accepted + stapled）；签名凭据不入库，流程见 `docs/SIGNING.md` |
 | 用量拆分 / 趋势 / 预算 | ✅ 每个 agent 今日 tokens 显示在面板行；设置里 7 天 sparkline；每日 token 预算超限后右栏变橙并当天提醒 |
 | 外部 agent 一键接入 | ✅ Claude Code hooks、Codex wrapper；✅ 桌面 adapter：Codex（SQLite）、WorkBuddy（trace）、Grok Bot（persistence）、Hermes（`state.db`，没有库或进程时仍用演示）。同一 App 最多 3 个活跃会话。外部审批只读 |
-| Homebrew / 发布 | ✅ `Casks/agent-bar.rb` + `v*` tag release workflow，上传 `Agent-Bar-<version>.dmg`；✅ DMG 已公证，cask 校验和已同步 |
+| Homebrew / 发布 | ✅ `Casks/agent-bar.rb` + `v*` tag release workflow，上传 `Agent-Bar-<version>.dmg`；✅ 已发布的 v0.3.6 DMG 已公证，cask 校验和仍对应该包。v0.3.7 的公证 DMG 和 cask 更新要等新包装出来 |
 
 ---
 
@@ -130,10 +130,15 @@ otool -l agentbar | grep -A3 LC_BUILD_VERSION   # 期望 minos 14.0
 - **Hermes**：`hermes` 进程或 Hermes.app 在跑，并且 `HERMES_HOME/state.db`（默认 `~/.hermes/state.db`）能只读打开时，按最近 90 秒的消息推断最多 3 个会话。库不存在、进程不在、或表结构对不上时不编造数据，演示模式仍用原来的 Hermes 行。不写数据库，不把累计 token 显示成今日用量。
 - **测试**：提问答案的多选顺序、未知选项、超长自定义；`railPillWidth` / `predictedRailFrames`；`applyUsageTick` 的首次基线、增量和跨日；Hermes 会话推断和每个 App 最多 3 个子会话。
 
+## 4d. v0.3.7
+
+- **官方 DMG 带上 DSH bridge**：bundle 版本升到 0.3.7，用来发布包含 bundled bridge 的公证 DMG。bridge 打进 App 来自 PR #6；只装安装包、没有仓库、也没跑过 `./start.sh`，就可以离开演示模式。v0.3.6 已打 tag。已经发布的 v0.3.6 DMG 是这次改动之前打的包。v0.3.7 的 GitHub Release 还没有，当前可下载的安装包仍是 v0.3.6；cask 的版本和 sha256 仍指向那一版。
+
 ## 5. 最近完成（时间线）
 
 | 日期 | 内容 |
 |---|---|
+| 11-18 | **v0.3.7**：官方 DMG 带上 DSH bridge（来自 PR #6），只装安装包也能离开演示模式 |
 | 11-17 | **v0.3.6**：Hermes 只读 `state.db`；外部审批保持只读并写明原因；布局、用量、提问和 adapter 推断测试 |
 | 11-17 | **v0.3.5**：GitHub Release 更新检查（不自动安装）+ 通知授权引导 |
 | 11-17 | **P0 审批双向落地**：本机控制通道 + token + 审计 + 400ms 长按 + 危险命令二次确认；真实允许/拒绝验收通过 |
