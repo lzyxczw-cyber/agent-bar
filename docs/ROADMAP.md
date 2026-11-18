@@ -1,6 +1,6 @@
 # Agent Bar · 交接与下一步
 
-> 状态快照：**v0.3.6**，2026-11-17。当前 `main` 已从公开初始提交 `9186deb` 起步，并合并 PR #1（协议不匹配、问题答复、文档对齐）。v0.3.5 加了 GitHub Release 更新检查和通知授权引导。v0.3.6 加了 Hermes 本机读取，并确认外部审批保持只读。都还没打 tag。
+> 状态快照：**v0.3.6**，2026-11-17。当前 `main` 已从公开初始提交 `9186deb` 起步，并合并 PR #1（协议不匹配、问题答复、文档对齐）。v0.3.5 加了 GitHub Release 更新检查和通知授权引导。v0.3.6 加了 Hermes 本机读取，并确认外部审批保持只读。v0.3.6 已打 tag，安装包是 `Agent-Bar-0.3.6.dmg`；没有单独的 v0.3.5 tag 或安装包，更新检查和通知授权引导随 v0.3.6 发布。
 > bundle 版本见 `build.sh` 的 `CFBundleShortVersionString` / `CFBundleVersion`：`0.3.6`。
 > 本机 `~/Documents` 的 File Provider 扩展属性会让本地 `codesign --verify` 失败（CI 不受影响）。
 > 这份文档按当前公开树校对，不沿用已删除仓库里的 v0.4.1-dev 说法。看完这一页就能接手。

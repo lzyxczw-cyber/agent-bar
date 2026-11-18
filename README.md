@@ -6,9 +6,9 @@
 
 ## 安装
 
-这棵源码的 bundle 版本是 **v0.3.6**。已经打过 tag 的安装包仍是 [GitHub Release v0.3.4](https://github.com/lzyxczw-cyber/agent-bar/releases/tag/v0.3.4)；更新的 DMG 要等下次打 `v*` tag 才会出现在 Releases 里。应用内更新检查看的是这个 Release，不会提前假设还没发布的包。
+这棵源码的 bundle 版本是 **v0.3.6**。当前已发布的安装包是 [GitHub Release v0.3.6](https://github.com/lzyxczw-cyber/agent-bar/releases/tag/v0.3.6) 的官方 `Agent-Bar-0.3.6.dmg`。应用内更新检查看的是 GitHub `releases/latest`，不会覆盖正在运行的 App。
 
-- DMG：上面的 v0.3.4 Release（当前已发布的安装包）
+- DMG：上面的 v0.3.6 Release（当前已发布的安装包，官方 `Agent-Bar-0.3.6.dmg`）
 - Homebrew：仓库里的 cask 没有单独的 tap，它直接下载已发布 Release 里的 DMG。在克隆下来的 `agent-bar` 目录执行：
 
 ```bash
@@ -262,11 +262,11 @@ NOTARIZE=1 NOTARY_PROFILE="agentbar-notary" ./package.sh
 
 - `package.sh` 会在 `/tmp` 里的 staging 目录重新签名再打 DMG，绕开 `~/Documents` 的 File Provider
   扩展属性问题，DMG 内的 App 签名是有效的。
-- **Developer ID / 公证（已完成）**：已发布的 `Agent-Bar-0.3.4.dmg` 已用
+- **Developer ID / 公证（已完成）**：已发布的 `Agent-Bar-0.3.6.dmg` 已用
   Developer ID 签名并公证（Accepted + stapled），
   Gatekeeper 显示 `source=Notarized Developer ID`。签名/公证流水线见
-  [docs/SIGNING.md](docs/SIGNING.md)。源码版本升到 0.3.5 之后，新的 DMG 要等下一次 `v*` tag。
-- **Homebrew**：`Casks/agent-bar.rb` 仍指向已发布的 0.3.4 DMG；`v*` tag 的 release workflow 会构建 DMG、
+  [docs/SIGNING.md](docs/SIGNING.md)。
+- **Homebrew**：`Casks/agent-bar.rb` 指向已发布的 0.3.6 DMG；`v*` tag 的 release workflow 会构建 DMG、
   用 `tools/update-cask.sh` 自动回写 cask 校验和并上传 release。公开仓库后：
   ```bash
   brew install --cask ./Casks/agent-bar.rb
