@@ -1,6 +1,6 @@
 # Agent Bar · 交接与下一步
 
-> 状态快照：**v0.3.7**，2026-11-18。当前 `main` 已从公开初始提交 `9186deb` 起步，并合并 PR #1（协议不匹配、问题答复、文档对齐）和 PR #6（把 DSH bridge 打进 App，启动时同步到 Application Support）。v0.3.5 加了 GitHub Release 更新检查和通知授权引导。v0.3.6 加了 Hermes 本机读取，并确认外部审批保持只读。v0.3.6 已打 tag；已经发布的 `Agent-Bar-0.3.6.dmg` 是 bundled-bridge 改动之前打的包。没有单独的 v0.3.5 tag 或安装包，更新检查和通知授权引导随 v0.3.6 发布。v0.3.7 是把 DSH bridge 放进官方 DMG 的版本，只装安装包也能离开演示模式。v0.3.7 的 GitHub Release 还没有，当前可下载的安装包仍是 v0.3.6。
+> 状态快照：**v0.3.7**，2026-11-18。当前 `main` 已从公开初始提交 `9186deb` 起步，并合并 PR #1（协议不匹配、问题答复、文档对齐）和 PR #6（把 DSH bridge 打进 App，启动时同步到 Application Support）。v0.3.5 加了 GitHub Release 更新检查和通知授权引导。v0.3.6 加了 Hermes 本机读取，并确认外部审批保持只读。v0.3.6 已打 tag；已经发布的 `Agent-Bar-0.3.6.dmg` 是 bundled-bridge 改动之前打的包。没有单独的 v0.3.5 tag 或安装包，更新检查和通知授权引导随 v0.3.6 发布。v0.3.7 已打 tag，官方安装包是 `Agent-Bar-0.3.7.dmg`，里面带上了 DSH bridge，只装安装包也能离开演示模式。
 > bundle 版本见 `build.sh` 的 `CFBundleShortVersionString` / `CFBundleVersion`：`0.3.7`。
 > 本机 `~/Documents` 的 File Provider 扩展属性会让本地 `codesign --verify` 失败（CI 不受影响）。
 > 这份文档按当前公开树校对，不沿用已删除仓库里的 v0.4.1-dev 说法。看完这一页就能接手。
@@ -67,7 +67,7 @@ ls ~/.dsh/.credentials.yaml   # 需要本机装过 DSH 并登录过（bridge 用
 | 签名 / 公证 | ✅ 已用 Developer ID 签名并通过 Apple 公证（Accepted + stapled）；签名凭据不入库，流程见 `docs/SIGNING.md` |
 | 用量拆分 / 趋势 / 预算 | ✅ 每个 agent 今日 tokens 显示在面板行；设置里 7 天 sparkline；每日 token 预算超限后右栏变橙并当天提醒 |
 | 外部 agent 一键接入 | ✅ Claude Code hooks、Codex wrapper；✅ 桌面 adapter：Codex（SQLite）、WorkBuddy（trace）、Grok Bot（persistence）、Hermes（`state.db`，没有库或进程时仍用演示）。同一 App 最多 3 个活跃会话。外部审批只读 |
-| Homebrew / 发布 | ✅ `Casks/agent-bar.rb` + `v*` tag release workflow，上传 `Agent-Bar-<version>.dmg`；✅ 已发布的 v0.3.6 DMG 已公证，cask 校验和仍对应该包。v0.3.7 的公证 DMG 和 cask 更新要等新包装出来 |
+| Homebrew / 发布 | ✅ `Casks/agent-bar.rb` + `v*` tag release workflow，上传 `Agent-Bar-<version>.dmg`；✅ 已发布的 v0.3.7 DMG 已公证，cask 校验和已同步 |
 
 ---
 
@@ -132,7 +132,7 @@ otool -l agentbar | grep -A3 LC_BUILD_VERSION   # 期望 minos 14.0
 
 ## 4d. v0.3.7
 
-- **官方 DMG 带上 DSH bridge**：bundle 版本升到 0.3.7，用来发布包含 bundled bridge 的公证 DMG。bridge 打进 App 来自 PR #6；只装安装包、没有仓库、也没跑过 `./start.sh`，就可以离开演示模式。v0.3.6 已打 tag。已经发布的 v0.3.6 DMG 是这次改动之前打的包。v0.3.7 的 GitHub Release 还没有，当前可下载的安装包仍是 v0.3.6；cask 的版本和 sha256 仍指向那一版。
+- **官方 DMG 带上 DSH bridge**：bundle 版本升到 0.3.7，官方 `Agent-Bar-0.3.7.dmg` 已公证发布，里面带上了 bundled bridge。bridge 打进 App 来自 PR #6；只装安装包、没有仓库、也没跑过 `./start.sh`，就可以离开演示模式。v0.3.6 已打 tag。已经发布的 v0.3.6 DMG 是这次改动之前打的包。
 
 ## 5. 最近完成（时间线）
 
