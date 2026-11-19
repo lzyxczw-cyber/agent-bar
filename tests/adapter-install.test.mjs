@@ -16,25 +16,35 @@ function run(home, ...args) {
   });
 }
 
-// Regression: removeOurHooks used to return the raw settings object when the
-// file had no hooks key, so a first-time install crashed on `node.hooks`.
-test('Claude adapter installs into a settings file without hooks, then uninstalls', () => {
+function tempHome() {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ab-install-'));
+  fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
+  return home;
+}
+
+test('claude install only prints guidance and leaves settings untouched', () => {
+  const home = tempHome();
   const settings = path.join(home, '.claude', 'settings.json');
+  fs.writeFileSync(settings, JSON.stringify({ permissions: { allow: [] } }, null, 2) + '\n');
+  const before = fs.readFileSync(settings, 'utf8');
 
   const installed = run(home, 'claude');
   assert.equal(installed.status, 0, installed.stderr);
-  const afterInstall = JSON.parse(fs.readFileSync(settings, 'utf8'));
-  const hooks = Object.values(afterInstall.hooks || {}).flat().flatMap((group) => group.hooks || []);
-  assert.equal(hooks.length, 2);
-  for (const hook of hooks) {
-    assert.equal(hook.type, 'command');
-    assert.equal(hook.timeout, 5);
-    assert.match(hook.command, /agentbar-report\.mjs/);
-  }
+  assert.match(installed.stdout, /transcript/i);
+  assert.equal(fs.readFileSync(settings, 'utf8'), before);
+});
+
+test('uninstall-claude still removes hooks installed by older versions', () => {
+  const home = tempHome();
+  const settings = path.join(home, '.claude', 'settings.json');
+  fs.writeFileSync(settings, JSON.stringify({
+    hooks: {
+      PreToolUse: [{ matcher: '*', hooks: [{ type: 'command', timeout: 5, command: 'node /x/tools/agentbar-report.mjs --id claude-code' }] }],
+      Stop: [{ hooks: [{ type: 'command', timeout: 5, command: 'node /x/tools/agentbar-report.mjs --id claude-code --status done' }] }]
+    }
+  }, null, 2) + '\n');
 
   const removed = run(home, 'uninstall-claude');
   assert.equal(removed.status, 0, removed.stderr);
-  const afterRemove = JSON.parse(fs.readFileSync(settings, 'utf8'));
-  assert.equal(afterRemove.hooks, undefined);
+  assert.equal(JSON.parse(fs.readFileSync(settings, 'utf8')).hooks, undefined);
 });

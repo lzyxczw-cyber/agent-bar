@@ -649,10 +649,11 @@ fi
 exit "$STATUS"
 ```
 
-**Claude Code (hooks).** Claude Code hooks run a command on events; report
-running on tool use and done on `Stop`. The report is shown live as long as
-hooks keep refreshing it; for long single turns add the same 45 s heartbeat as
-above or a `UserPromptSubmit` → `Stop` pair:
+**Claude Code (legacy hooks).** Older builds installed `PreToolUse` / `Stop`
+hooks that reported a tool name. The desktop watcher now reads Claude Code's
+transcripts directly (§11.5), so installation is no longer needed. This
+example is kept for understanding old setups; remove it with
+`node tools/agentbar-install-adapter.mjs uninstall-claude`:
 
 ```json
 {
@@ -685,6 +686,27 @@ above or a `UserPromptSubmit` → `Stop` pair:
 For any other CLI agent the pattern is the same: report `running` at start,
 refresh `updatedAt` every 30–60 s while it works, then report `done` /
 `failed`, or `--remove` when it is gone.
+
+### 11.5 Claude Code transcripts (read-only)
+
+`tools/agentbar-app-adapters.mjs` reads `~/.claude/projects/<encoded-cwd>/*.jsonl`
+(override the config root with `CLAUDE_CONFIG_DIR`). Nothing is written to
+`~/.claude/`.
+
+- Only first-level `.jsonl` files; subdirectories such as `tool-results/` are
+  ignored. Files whose last meaningful record is older than 15 minutes are
+  dropped.
+- The last record types `assistant` / `user` drive the state: an unanswered
+  `tool_use`, a `tool_result`, or a real user prompt means `running`;
+  `stop_reason: end_turn` without a tool call means `done`.
+- `project` is `basename(cwd)`; `detail` carries the git branch.
+- `tokens` is **today's** total, deduplicated by `message.id`, summing
+  `input_tokens + output_tokens + cache_creation_input_tokens` and excluding
+  `cache_read_input_tokens`.
+- Files ending in `continued-in` are skipped: the successor transcript already
+  contains their history, so showing both would duplicate the session.
+- Thinking text is truncated to 600 characters. Approvals stay read-only:
+  transcripts cannot answer a pending permission prompt.
 
 ---
 

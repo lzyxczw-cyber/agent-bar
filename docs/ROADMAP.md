@@ -66,7 +66,7 @@ ls ~/.dsh/.credentials.yaml   # 需要本机装过 DSH 并登录过（bridge 用
 | 重拍截图 | 公开树的 `docs/` 里没有 `docs/*.png`。带本机桌面的截图不入库；这台环境不能运行 macOS App，所以没有补产品图 |
 | 签名 / 公证 | ✅ 已用 Developer ID 签名并通过 Apple 公证（Accepted + stapled）；签名凭据不入库，流程见 `docs/SIGNING.md` |
 | 用量拆分 / 趋势 / 预算 | ✅ 每个 agent 今日 tokens 显示在面板行；设置里 7 天 sparkline；每日 token 预算超限后右栏变橙并当天提醒 |
-| 外部 agent 一键接入 | ✅ Claude Code hooks、Codex wrapper；✅ 桌面 adapter：Codex（SQLite）、WorkBuddy（trace）、Grok Bot（persistence）、Hermes（`state.db`，没有库或进程时仍用演示）。同一 App 最多 3 个活跃会话。外部审批只读 |
+| 外部 agent 一键接入 | ✅ Claude Code 改为直接读 transcript（无需 hook）、Codex wrapper；✅ 桌面 adapter：Codex（SQLite）、WorkBuddy（trace）、Grok Bot（persistence）、Hermes（`state.db`，没有库或进程时仍用演示）。同一 App 最多 3 个活跃会话。外部审批只读 |
 | Homebrew / 发布 | ✅ `Casks/agent-bar.rb` + `v*` tag release workflow，上传 `Agent-Bar-<version>.dmg`；✅ 已发布的 v0.3.9 DMG 已公证，cask 校验和已同步 |
 
 ---
