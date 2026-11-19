@@ -2,7 +2,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   aggregateApp,
+  claudeRecordUpdate,
+  claudeReport,
+  claudeTodayKey,
+  claudeToolSummary,
   codexStandbyStatus,
+  createClaudeState,
   grokActivityStatus,
   hermesIdleReport,
   hermesIdleStatus,
@@ -11,6 +16,7 @@ import {
   hermesTimestampMs,
   inferHermesRunning,
   latestHermesMessages,
+  mergeClaudeState,
   normalizeHermesSession,
   standbyParentStatus,
   workbuddyStandbyStatus
@@ -218,4 +224,92 @@ test('standby is idle unless a round just ended', () => {
   assert.equal(grokActivityStatus({ sentAt: NOW - 20 * 1000, assistantReplied: true, now: NOW }), 'done');
   assert.equal(grokActivityStatus({ sentAt: NOW - 10 * 60 * 1000, assistantReplied: true, now: NOW }), 'idle');
   assert.equal(grokActivityStatus({ now: NOW }), 'idle');
+});
+
+// MARK: Claude transcripts
+
+const CLAUDE_DAY = localTime(2026, 11, 19, 9);
+const claudeTs = (offsetMs = 0) => new Date(CLAUDE_DAY + offsetMs).toISOString();
+
+function assistantRecord(message, extra = {}) {
+  return {
+    type: 'assistant',
+    sessionId: 'sess-1234',
+    cwd: '/Volumes/XC1_DATA/Claude/agent-bar',
+    gitBranch: 'feat/claude',
+    timestamp: claudeTs(),
+    message: { id: 'msg-1', model: 'claude-x', stop_reason: 'tool_use', usage: {
+      input_tokens: 10, output_tokens: 5, cache_creation_input_tokens: 2, cache_read_input_tokens: 999
+    }, content: message },
+    ...extra
+  };
+}
+
+test('claude metadata records are ignored', () => {
+  for (const type of ['cost-state', 'last-prompt', 'system', 'api-request', 'file-history-snapshot']) {
+    assert.equal(claudeRecordUpdate({ type, timestamp: claudeTs() }), null);
+  }
+});
+
+test('assistant tool_use is running, deduped by message id, and excludes cache reads', () => {
+  let state = createClaudeState();
+  const tool = assistantRecord([{ type: 'tool_use', name: 'Edit', input: { file_path: '/x/agent-bar/Views.swift' } }]);
+  state = mergeClaudeState(state, claudeRecordUpdate(tool), CLAUDE_DAY);
+  const text = assistantRecord([{ type: 'text', text: '正在改界面' }]);
+  state = mergeClaudeState(state, claudeRecordUpdate(text), CLAUDE_DAY);
+  const report = claudeReport(state, CLAUDE_DAY, CLAUDE_DAY);
+  assert.equal(report.status, 'running');
+  assert.equal(report.tokens, 17);
+  assert.equal(report.tool, 'Edit: Views.swift');
+  assert.equal(report.project, 'agent-bar');
+});
+
+test('assistant end_turn without tool_use reports done', () => {
+  let state = createClaudeState();
+  const record = assistantRecord([{ type: 'text', text: '完成' }], {
+    message: { id: 'msg-2', model: 'claude-x', stop_reason: 'end_turn', usage: { output_tokens: 3 }, content: [{ type: 'text', text: '完成' }] }
+  });
+  state = mergeClaudeState(state, claudeRecordUpdate(record), CLAUDE_DAY);
+  assert.equal(claudeReport(state, CLAUDE_DAY, CLAUDE_DAY).status, 'done');
+});
+
+test('user tool_result keeps running; command wrappers are not prompts', () => {
+  let state = createClaudeState();
+  state = mergeClaudeState(state, claudeRecordUpdate(assistantRecord([{ type: 'tool_use', name: 'Bash', input: { command: 'npm test\nrm -rf /' } }])), CLAUDE_DAY);
+  state = mergeClaudeState(state, claudeRecordUpdate({
+    type: 'user', timestamp: claudeTs(1000), message: { content: [{ type: 'tool_result', tool_use_id: 't1' }] }
+  }), CLAUDE_DAY);
+  assert.equal(claudeReport(state, CLAUDE_DAY, CLAUDE_DAY).status, 'running');
+  assert.equal(claudeToolSummary({ name: 'Bash', input: { command: 'npm test\nrm -rf /' } }), 'Bash: npm test');
+
+  for (const text of ['<command-name>/plugin</command-name>', '<local-command-stdout>ok</local-command-stdout>']) {
+    assert.equal(claudeRecordUpdate({ type: 'user', timestamp: claudeTs(), message: { content: text } }), null);
+  }
+  assert.equal(claudeRecordUpdate({ type: 'user', isMeta: true, timestamp: claudeTs(), message: { content: 'meta' } }), null);
+  assert.equal(claudeRecordUpdate({ type: 'user', timestamp: claudeTs(), message: { content: '真的新指令' } }).prompt, true);
+});
+
+test('continued-in sessions are suppressed', () => {
+  let state = createClaudeState();
+  state = mergeClaudeState(state, claudeRecordUpdate({
+    type: 'continued-in', timestamp: claudeTs(), sessionId: 'sess-old', continuedInSessionId: 'sess-new'
+  }), CLAUDE_DAY);
+  assert.equal(claudeReport(state, CLAUDE_DAY, CLAUDE_DAY), null);
+});
+
+test('today tokens reset after local midnight', () => {
+  let state = createClaudeState();
+  const late = new Date(2026, 10, 19, 23, 58).getTime();
+  const afterMidnight = new Date(2026, 10, 20, 0, 2).getTime();
+  const record = assistantRecord([{ type: 'text', text: 'x' }], { timestamp: new Date(late).toISOString() });
+  state = mergeClaudeState(state, claudeRecordUpdate(record), late);
+  assert.equal(claudeReport(state, late, late).tokens, 17);
+  assert.equal(claudeReport(state, afterMidnight, late).tokens, 0);
+  assert.equal(claudeTodayKey(afterMidnight), '2026-11-20');
+});
+
+test('a session older than the active window is dropped', () => {
+  let state = createClaudeState();
+  state = mergeClaudeState(state, claudeRecordUpdate(assistantRecord([{ type: 'text', text: 'x' }])), CLAUDE_DAY);
+  assert.equal(claudeReport(state, CLAUDE_DAY + 16 * 60 * 1000, CLAUDE_DAY), null);
 });
