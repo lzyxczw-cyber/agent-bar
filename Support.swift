@@ -717,3 +717,81 @@ func notificationDeliversBanner(permission: NotificationPermission, inAppEnabled
 
 // MARK: - Demo model
 
+
+// MARK: - Claude approval handshake (PermissionRequest hook)
+
+/// One `claude-approvals/pending/<id>.json` written by the hook.
+struct ClaudePendingApproval: Equatable {
+    let id: String
+    let nonce: String
+    let sessionId: String
+    let cwd: String
+    let tool: String
+    let command: String
+    let createdAt: Double
+}
+
+func parseClaudePendingApproval(_ data: Data) -> ClaudePendingApproval? {
+    guard let value = try? JSONSerialization.jsonObject(with: data),
+          let object = value as? [String: Any] else { return nil }
+    guard let schema = object["schema"] as? Int, schema == 1 else { return nil }
+    guard let id = object["id"] as? String, !id.isEmpty,
+          let nonce = object["nonce"] as? String, !nonce.isEmpty,
+          let sessionId = object["sessionId"] as? String, !sessionId.isEmpty,
+          let createdAt = object["createdAt"] as? Double, createdAt.isFinite else { return nil }
+    return ClaudePendingApproval(
+        id: id,
+        nonce: nonce,
+        sessionId: sessionId,
+        cwd: object["cwd"] as? String ?? "",
+        tool: object["tool"] as? String ?? "Bash",
+        command: object["command"] as? String ?? "",
+        createdAt: createdAt
+    )
+}
+
+/// The newest pending wins; the rest are only counted in the row note.
+func selectClaudePendingApproval(_ approvals: [ClaudePendingApproval]) -> (approval: ClaudePendingApproval, extra: Int)? {
+    guard let newest = approvals.max(by: { $0.createdAt < $1.createdAt }) else { return nil }
+    return (newest, approvals.count - 1)
+}
+
+let claudeApprovalPrefix = "claude:"
+
+func claudeApprovalId(_ requestId: String) -> String {
+    claudeApprovalPrefix + requestId
+}
+
+func claudeApprovalRequestId(_ approvalId: String?) -> String? {
+    guard let approvalId, approvalId.hasPrefix(claudeApprovalPrefix) else { return nil }
+    let requestId = String(approvalId.dropFirst(claudeApprovalPrefix.count))
+    return requestId.isEmpty ? nil : requestId
+}
+
+func claudeApprovalCanAnswer(_ approvalId: String?) -> Bool {
+    claudeApprovalRequestId(approvalId) != nil
+}
+
+/// Map the shared UI decisions onto the hook protocol.
+func claudeApprovalDecision(_ storeDecision: String) -> String? {
+    switch storeDecision {
+    case "allowed-once": return "allow"
+    case "rejected": return "deny"
+    default: return nil
+    }
+}
+
+func claudeApprovalDecisionJSON(_ approval: ClaudePendingApproval, decision: String, at: Date) -> Data? {
+    let payload: [String: Any] = [
+        "schema": 1,
+        "id": approval.id,
+        "nonce": approval.nonce,
+        "decision": decision,
+        "decidedAt": Int(at.timeIntervalSince1970 * 1000)
+    ]
+    return try? JSONSerialization.data(withJSONObject: payload)
+}
+
+func claudeApprovalNotice(project: String, extra: Int) -> String {
+    extra > 0 ? "\(project) · 还有 \(extra) 个待审批" : project
+}
