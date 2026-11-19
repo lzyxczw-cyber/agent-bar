@@ -16,6 +16,69 @@ private func pxColor(_ r: Double, _ g: Double, _ b: Double) -> Color {
     Color(red: r, green: g, blue: b)
 }
 
+/// One material for the bar and the panel: a cool near-black with a top-lit
+/// edge. Keeping the levels here makes the two layers read as one surface.
+enum BarPalette {
+    static let barBase = Color(red: 0.055, green: 0.061, blue: 0.075)
+    static let barTop = Color(red: 0.112, green: 0.124, blue: 0.148)
+    static let barBottom = Color(red: 0.042, green: 0.047, blue: 0.059)
+    static let panelBase = Color(red: 0.068, green: 0.074, blue: 0.090)
+    static let hairline = Color.white.opacity(0.075)
+    static let hairlineStrong = Color.white.opacity(0.15)
+    static let textPrimary = Color.white.opacity(0.94)
+    static let textSecondary = Color.white.opacity(0.52)
+    static let textTertiary = Color.white.opacity(0.30)
+    static let accent = Color(red: 0.45, green: 0.82, blue: 1.0)
+}
+
+extension View {
+    /// Panel cards: a top-lit fill with a hairline that fades toward the
+    /// bottom, so rows lift off the background without a flat gray box.
+    /// `tint` washes the leading edge in the agent's status color.
+    func softCard(cornerRadius: CGFloat = 10, active: Bool = false, tint: Color? = nil) -> some View {
+        self
+            .background(
+                ZStack {
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                colors: [
+                                    Color.white.opacity(active ? 0.085 : 0.045),
+                                    Color.white.opacity(active ? 0.050 : 0.022)
+                                ],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        )
+                    if let tint {
+                        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                            .fill(
+                                LinearGradient(
+                                    colors: [tint.opacity(active ? 0.14 : 0.04), .clear],
+                                    startPoint: .leading,
+                                    endPoint: UnitPoint(x: 0.55, y: 0.5)
+                                )
+                            )
+                    }
+                }
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .strokeBorder(
+                        LinearGradient(
+                            colors: [
+                                Color.white.opacity(active ? 0.22 : 0.10),
+                                Color.white.opacity(active ? 0.10 : 0.05)
+                            ],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        ),
+                        lineWidth: 0.7
+                    )
+            )
+    }
+}
+
 extension PixelSprite {
     static let whale = PixelSprite(
         frames: [
@@ -571,6 +634,10 @@ struct StatusDot: View {
         ZStack {
             if animated {
                 Circle()
+                    .fill(color.opacity(0.38))
+                    .frame(width: diameter, height: diameter)
+                    .blur(radius: 3.5)
+                Circle()
                     .stroke(color.opacity(0.5), lineWidth: 1)
                     .frame(width: diameter, height: diameter)
                     .scaleEffect(pulse ? 2.6 : 1.0)
@@ -654,52 +721,56 @@ struct AgentDetailPill: View {
     let live: Bool
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 9) {
+            Capsule()
+                .fill(
+                    LinearGradient(
+                        colors: [agent.status.color.opacity(0.95), agent.status.color.opacity(0.35)],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
+                .frame(width: 2, height: 16)
             Text(agent.name)
                 .font(.system(size: 11.5, weight: .semibold))
-                .foregroundStyle(Color.white.opacity(0.96))
+                .foregroundStyle(BarPalette.textPrimary)
                 .lineLimit(1)
             Text(agent.status.label)
-                .font(.system(size: 9.5, weight: .semibold))
+                .font(.system(size: 9, weight: .semibold))
                 .foregroundStyle(agent.status.color)
                 .padding(.horizontal, 5)
                 .padding(.vertical, 1.5)
-                .background(Capsule().fill(agent.status.color.opacity(0.14)))
+                .background(Capsule().fill(agent.status.color.opacity(0.12)))
+                .overlay(Capsule().strokeBorder(agent.status.color.opacity(0.22), lineWidth: 0.5))
             Text(agent.project)
                 .font(.system(size: 10, weight: .medium))
-                .foregroundStyle(Color.white.opacity(0.38))
+                .foregroundStyle(BarPalette.textSecondary)
                 .lineLimit(1)
             Text("·")
                 .font(.system(size: 10))
-                .foregroundStyle(Color.white.opacity(0.22))
+                .foregroundStyle(Color.white.opacity(0.18))
             Text(agent.tool)
                 .font(.system(size: 10.5, design: .monospaced))
-                .foregroundStyle(Color.white.opacity(0.55))
+                .foregroundStyle(Color.white.opacity(0.58))
                 .lineLimit(1)
                 .truncationMode(.middle)
             if let thought = displayedThought {
-                Text("💭 " + thought.replacingOccurrences(of: "\n", with: " "))
+                Text("“" + thought.replacingOccurrences(of: "\n", with: " ") + "”")
                     .font(.system(size: 9.5))
-                    .foregroundStyle(Color.white.opacity(0.35))
+                    .italic()
+                    .foregroundStyle(Color.white.opacity(0.40))
                     .lineLimit(1)
                     .truncationMode(.tail)
             }
             Spacer(minLength: 6)
             Text(elapsedString(since: agent.startedAt))
                 .font(.system(size: 10, design: .monospaced))
-                .foregroundStyle(Color.white.opacity(0.40))
+                .foregroundStyle(BarPalette.textTertiary)
                 .padding(.trailing, 2)
         }
         .padding(.horizontal, 10)
         .frame(width: width, height: railAvatarSize, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .fill(Color.white.opacity(0.09))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .strokeBorder(Color.white.opacity(0.16), lineWidth: 0.7)
-        )
+        .softCard(cornerRadius: 8, active: true)
         .task(id: agent.thought) {
             thoughtFallback = false
             try? await Task.sleep(nanoseconds: 8_000_000_000)
@@ -714,9 +785,18 @@ struct SelectedRailIcon: View {
     let live: Bool
     let reduceMotion: Bool
     @State private var iconScale: CGFloat = 0.72
+    @State private var halo = false
 
     var body: some View {
         ZStack(alignment: .bottomTrailing) {
+            if agent.status == .running && !reduceMotion {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(agent.status.color.opacity(0.16))
+                    .frame(width: railAvatarSize, height: railAvatarSize)
+                    .blur(radius: 7)
+                    .scaleEffect(halo ? 1.18 : 0.90)
+                    .opacity(halo ? 0.80 : 0.30)
+            }
             RoundedRectangle(cornerRadius: 6, style: .continuous)
                 .fill(Color.white.opacity(0.16))
                 .overlay(
@@ -741,6 +821,18 @@ struct SelectedRailIcon: View {
             withAnimation(reduceMotion ? .easeOut(duration: 0.15) : .spring(response: 0.35, dampingFraction: 0.60)) {
                 iconScale = 1.0
             }
+            startHalo()
+        }
+        .onChange(of: agent.status) { _, _ in
+            halo = false
+            startHalo()
+        }
+    }
+
+    private func startHalo() {
+        guard agent.status == .running, !reduceMotion else { return }
+        withAnimation(.easeInOut(duration: 2.4).repeatForever(autoreverses: true)) {
+            halo = true
         }
     }
 }
@@ -875,16 +967,36 @@ struct BarView: View {
     var body: some View {
         ZStack(alignment: .top) {
             // opaque base: fully covers the system menu bar underneath
-            Color(red: 0.070, green: 0.076, blue: 0.092)
+            BarPalette.barBase
 
             LinearGradient(
-                colors: [Color(red: 0.108, green: 0.118, blue: 0.140),
-                         Color(red: 0.062, green: 0.068, blue: 0.082)],
+                colors: [BarPalette.barTop, BarPalette.barBottom],
                 startPoint: .top, endPoint: .bottom
             )
 
+            // A soft light pool behind the active rail, so the selected agent
+            // sits in the room instead of on a flat strip.
+            if let selected = selectedAgent {
+                LinearGradient(
+                    colors: [selected.status.color.opacity(0.11), .clear],
+                    startPoint: .leading,
+                    endPoint: UnitPoint(x: 0.42, y: 0.5)
+                )
+                .allowsHitTesting(false)
+            }
+
+            // Top sheen and bottom shade give the 24 pt strip a physical edge.
+            LinearGradient(
+                colors: [Color.white.opacity(0.06), .clear],
+                startPoint: .top, endPoint: UnitPoint(x: 0.5, y: 0.55)
+            )
+            LinearGradient(
+                colors: [.clear, Color.black.opacity(0.26)],
+                startPoint: UnitPoint(x: 0.5, y: 0.45), endPoint: .bottom
+            )
+
             Rectangle()
-                .fill(Color.white.opacity(0.06))
+                .fill(Color.white.opacity(0.10))
                 .frame(height: 0.5)
                 .frame(maxHeight: .infinity, alignment: .top)
 
@@ -928,14 +1040,23 @@ struct BarView: View {
 
             if store.runningCount > 0 {
                 Capsule()
-                    .fill(AgentStatus.running.color.opacity(0.35))
-                    .frame(width: geom.notchWidth * 0.55, height: 1.5)
-                    .blur(radius: 4)
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                AgentStatus.running.color.opacity(0),
+                                AgentStatus.running.color.opacity(0.55),
+                                AgentStatus.running.color.opacity(0)
+                            ],
+                            startPoint: .leading, endPoint: .trailing
+                        )
+                    )
+                    .frame(width: geom.notchWidth * 0.72, height: 1.5)
+                    .blur(radius: 5)
                     .offset(y: geom.barHeight - 2)
             }
 
             Rectangle()
-                .fill(Color.white.opacity(0.045))
+                .fill(Color.white.opacity(0.06))
                 .frame(height: 0.5)
                 .frame(maxHeight: .infinity, alignment: .bottom)
         }
@@ -1333,6 +1454,7 @@ struct PanelView: View {
     let onRestartAdapters: () -> Void
     @ObservedObject var updates: UpdateCenter
     @ObservedObject var notificationAuth: NotificationAuthCenter
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @AppStorage("AgentBarLatitude") private var weatherLatitude: Double = 31.2304
     @AppStorage("AgentBarLongitude") private var weatherLongitude: Double = 121.4737
@@ -1355,6 +1477,7 @@ struct PanelView: View {
     @State private var showSettings = false
     @State private var armedApprovalId: String?
     @State private var thoughtFallback = false
+    @State private var hoveredAgentID: String?
     @State private var questionSelections: [String: Set<String>] = [:]
     @State private var questionCustom: [String: String] = [:]
     @AppStorage("AgentBarNotificationsEnabled") private var notificationsEnabled = true
@@ -1500,6 +1623,14 @@ struct PanelView: View {
                         if let selected = store.agents.first(where: { $0.id == ui.selectedID }) {
                             thoughtCard(selected)
                         }
+                        if !store.agents.isEmpty {
+                            Text("AGENTS")
+                                .font(.system(size: 8.5, weight: .bold))
+                                .tracking(1.1)
+                                .foregroundStyle(BarPalette.textTertiary)
+                                .padding(.leading, 2)
+                                .padding(.top, 2)
+                        }
                         ForEach(store.agents) { agent in
                             row(agent)
                             if agent.id == ui.selectedID, !agent.sessions.isEmpty {
@@ -1517,8 +1648,34 @@ struct PanelView: View {
         }
         .frame(width: 560, height: 500)
         .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color(red: 0.070, green: 0.076, blue: 0.092).opacity(0.985))
+            ZStack {
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(BarPalette.panelBase)
+                // Two soft light pools keep the glass from reading as a flat slab.
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(
+                        RadialGradient(
+                            colors: [BarPalette.accent.opacity(0.10), .clear],
+                            center: UnitPoint(x: 0.12, y: -0.05),
+                            startRadius: 0, endRadius: 320
+                        )
+                    )
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(
+                        RadialGradient(
+                            colors: [Color(red: 0.62, green: 0.50, blue: 1.0).opacity(0.07), .clear],
+                            center: UnitPoint(x: 0.92, y: 1.02),
+                            startRadius: 0, endRadius: 300
+                        )
+                    )
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [Color.white.opacity(0.045), .clear],
+                            startPoint: .top, endPoint: UnitPoint(x: 0.5, y: 0.35)
+                        )
+                    )
+            }
         )
         .overlay(
             // Rim light: brighter along the top edge, as if the panel caught the screen's light.
@@ -1553,10 +1710,15 @@ struct PanelView: View {
         HStack(spacing: 9) {
             Image(systemName: "sparkles")
                 .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(Color(red: 0.45, green: 0.82, blue: 1.0))
+                .foregroundStyle(BarPalette.accent)
             Text("Agent Bar")
                 .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(Color.white.opacity(0.95))
+                .foregroundStyle(
+                    LinearGradient(
+                        colors: [Color.white.opacity(0.98), Color.white.opacity(0.72)],
+                        startPoint: .top, endPoint: .bottom
+                    )
+                )
             Text("非官方")
                 .font(.system(size: 9, weight: .semibold))
                 .foregroundStyle(Color.white.opacity(0.62))
@@ -1574,6 +1736,7 @@ struct PanelView: View {
             Text("\(store.runningCount) 运行 · \(store.waitingCount) 待审批")
                 .font(.system(size: 10.5, weight: .medium))
                 .foregroundStyle(Color.white.opacity(0.5))
+                .contentTransition(.numericText())
             Button(action: { ui.isPinned.toggle() }) {
                 Image(systemName: ui.isPinned ? "pin.fill" : "pin")
                     .font(.system(size: 10, weight: .semibold))
@@ -1598,8 +1761,13 @@ struct PanelView: View {
 
     private func row(_ agent: Agent) -> some View {
         let isSelected = agent.id == ui.selectedID
+        let isHovered = hoveredAgentID == agent.id
+        let isActive = isSelected || isHovered
         let phase = store.agents.firstIndex(where: { $0.id == agent.id }) ?? 0
         return HStack(spacing: 10) {
+                Capsule()
+                    .fill(agent.status.color.opacity(isSelected ? 0.95 : (isHovered ? 0.55 : 0.22)))
+                    .frame(width: 2.5, height: 20)
                 AgentGlyph(name: agent.name, seed: agent.id, live: store.isLive, status: agent.status, size: 26, phase: phase)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(agent.name)
@@ -1651,15 +1819,16 @@ struct PanelView: View {
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 7)
-            .background(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(Color.white.opacity(isSelected ? 0.075 : 0.035))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .strokeBorder(Color.white.opacity(isSelected ? 0.20 : 0.0), lineWidth: 0.7)
-            )
+            .softCard(cornerRadius: 10, active: isActive, tint: agent.status.color)
             .contentShape(Rectangle())
+            .onHover { inside in
+                if inside {
+                    hoveredAgentID = agent.id
+                } else if hoveredAgentID == agent.id {
+                    hoveredAgentID = nil
+                }
+            }
+            .animation(reduceMotion ? .easeOut(duration: 0.01) : .easeOut(duration: 0.14), value: isActive)
             .onTapGesture { onSelect(agent.id) }
     }
 
@@ -1748,14 +1917,7 @@ struct PanelView: View {
             }
         }
         .padding(12)
-        .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(Color.white.opacity(0.035))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(Color.white.opacity(0.08), lineWidth: 0.7)
-        )
+        .softCard(cornerRadius: 12)
         .task(id: agent.thought) {
             thoughtFallback = false
             try? await Task.sleep(nanoseconds: 8_000_000_000)
