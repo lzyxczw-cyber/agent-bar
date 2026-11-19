@@ -561,7 +561,7 @@ the reporter CLI).
 | `tokens` | number | optional token counter |
 | `startedAt` | number (ms) | first report time; preserved by the CLI |
 | `updatedAt` | number (ms) | heartbeat time; defaults to the file mtime |
-| `approvals[]` | array | normalized to `{id, kind:"approval", tool, command, reason, createdAt}`; **display-only** — the bridge's control channel only answers DSH approval events, not external reports. Codex, Claude Code, WorkBuddy, Grok Bot, and Hermes have no safe local write path from this process (token + still-pending id), so the panel does not offer Allow |
+| `approvals[]` | array | normalized to `{id, kind:"approval", tool, command, reason, createdAt}`; **display-only** — the bridge's control channel only answers DSH approval events, not external reports. Codex, WorkBuddy, Grok Bot, and Hermes have no safe local write path from this process (token + still-pending id), so the panel does not offer Allow. Claude Code's Bash approvals are not reported here: they use the separate `PermissionRequest` hook file handshake (see §11.5), which the App reads directly |
 | `process[]` | array | last 10 steps kept as `{kind, label, detail, at}` |
 | `appBundleID` | string | optional macOS bundle id; the notch uses it for "open app" / double-click |
 | `sessions[]` | array | optional child sessions, normalized to `{id, project, tool, detail, status, startedAt, updatedAt, tokens, thought}`; unknown session status is `idle`, not `done`. The notch shows them under the parent row |
@@ -705,8 +705,30 @@ refresh `updatedAt` every 30–60 s while it works, then report `done` /
   `cache_read_input_tokens`.
 - Files ending in `continued-in` are skipped: the successor transcript already
   contains their history, so showing both would duplicate the session.
-- Thinking text is truncated to 600 characters. Approvals stay read-only:
-  transcripts cannot answer a pending permission prompt.
+- Thinking text is truncated to 600 characters. Transcripts cannot answer a
+  pending permission prompt; the optional approval hook below is a separate
+  channel the bridge never sees.
+
+#### Optional Claude Bash approval hook
+
+`node tools/agentbar-install-adapter.mjs claude` copies
+`agentbar-claude-approve.mjs` and `lib/claude-approval-logic.mjs` into
+`~/Library/Application Support/AgentBar/hooks/` and registers a
+`PermissionRequest` hook (default matcher `^Bash$`, timeout 45s).
+
+- The hook fires only when Claude Code is about to show its own confirmation
+  prompt. It writes `claude-approvals/pending/<id>.json`
+  (`schema:1, id, nonce, sessionId, cwd, tool, command, createdAt`) and polls
+  `decisions/<id>.json` for up to 40s.
+- The App writes the decision (`schema:1, id, nonce, decision:"allow"|"deny",
+  decidedAt`), appends `audit.log`, and touches `claude-approvals/heartbeat`
+  every second. Every file is 0600 inside 0700 directories.
+- The native prompt stays on screen and both answers race; whichever arrives
+  first wins. If the App is not running (heartbeat older than 10s), the hook
+  exits 0 with no output and the native prompt behaves exactly as before.
+- This handshake goes through local files only. The bridge's `control/`
+  channel and `status.json` are not involved, so it also works while the DSH
+  bridge is offline.
 
 ---
 

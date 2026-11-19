@@ -66,7 +66,7 @@ ls ~/.dsh/.credentials.yaml   # 需要本机装过 DSH 并登录过（bridge 用
 | 重拍截图 | 公开树的 `docs/` 里没有 `docs/*.png`。带本机桌面的截图不入库；这台环境不能运行 macOS App，所以没有补产品图 |
 | 签名 / 公证 | ✅ 已用 Developer ID 签名并通过 Apple 公证（Accepted + stapled）；签名凭据不入库，流程见 `docs/SIGNING.md` |
 | 用量拆分 / 趋势 / 预算 | ✅ 每个 agent 今日 tokens 显示在面板行；设置里 7 天 sparkline；每日 token 预算超限后右栏变橙并当天提醒 |
-| 外部 agent 一键接入 | ✅ Claude Code 改为直接读 transcript（无需 hook）、Codex wrapper；✅ 桌面 adapter：Codex（SQLite）、WorkBuddy（trace）、Grok Bot（persistence）、Hermes（`state.db`，没有库或进程时仍用演示）。同一 App 最多 3 个活跃会话。外部审批只读 |
+| 外部 agent 一键接入 | ✅ Claude Code 改为直接读 transcript（无需 hook）、Codex wrapper；✅ 桌面 adapter：Codex（SQLite）、WorkBuddy（trace）、Grok Bot（persistence）、Hermes（`state.db`，没有库或进程时仍用演示）。同一 App 最多 3 个活跃会话。Claude Code 的 Bash 审批可用可选 `PermissionRequest` hook 在面板代答；Codex / WorkBuddy / Grok Bot / Hermes / 任意 CLI 仍只读 |
 | Homebrew / 发布 | ✅ `Casks/agent-bar.rb` + `v*` tag release workflow，上传 `Agent-Bar-<version>.dmg`；✅ 已发布的 v0.3.9 DMG 已公证，cask 校验和已同步 |
 
 ---
@@ -126,7 +126,7 @@ otool -l agentbar | grep -A3 LC_BUILD_VERSION   # 期望 minos 14.0
 
 ## 4c. v0.3.6 已完成
 
-- **外部审批**：Codex、Claude Code、WorkBuddy、Grok Bot、Hermes 和任意心跳上报都保持只读，面板说明原因，不放一个不会生效的「允许」按钮。Codex 的真实协议是当前 app-server 连接上的 `item/commandExecution/requestApproval`；Claude 的决定只能由当次 `PreToolUse` hook 输出。这两边 Agent Bar 都不是那个应答方。WorkBuddy trace、Grok blob、Hermes `state.db` 都没有带 token 和 pending id 的写接口。
+- **外部审批**：Codex、Claude Code、WorkBuddy、Grok Bot、Hermes 和任意心跳上报都保持只读，面板说明原因，不放一个不会生效的「允许」按钮。Codex 的真实协议是当前 app-server 连接上的 `item/commandExecution/requestApproval`；Claude 的决定只能由当次 `PreToolUse` hook 输出。这两边 Agent Bar 都不是那个应答方。WorkBuddy trace、Grok blob、Hermes `state.db` 都没有带 token 和 pending id 的写接口。（11-19 起 Claude 的 Bash 审批改由可选的 `PermissionRequest` hook 走本地文件握手，不再属于「只读」；见 4d。）
 - **Hermes**：`hermes` 进程或 Hermes.app 在跑，并且 `HERMES_HOME/state.db`（默认 `~/.hermes/state.db`）能只读打开时，按最近 90 秒的消息推断最多 3 个会话。库不存在、进程不在、或表结构对不上时不编造数据，演示模式仍用原来的 Hermes 行。不写数据库，不把累计 token 显示成今日用量。
 - **测试**：提问答案的多选顺序、未知选项、超长自定义；`railPillWidth` / `predictedRailFrames`；`applyUsageTick` 的首次基线、增量和跨日；Hermes 会话推断和每个 App 最多 3 个子会话。
 
@@ -143,10 +143,19 @@ otool -l agentbar | grep -A3 LC_BUILD_VERSION   # 期望 minos 14.0
 
 - **带上 `tools/lib/adapter-logic.mjs`**：bundle 版本升到 0.3.9，官方 `Agent-Bar-0.3.9.dmg` 已公证发布。这一版带上了 `tools/lib/adapter-logic.mjs`（来自 PR #11），桌面 adapter 可以加载。这一版仍然包含 bundled DSH bridge 和右上角上下两行网速（上面下载、下面上传，来自 PR #8）。已发布的 0.3.7 和 0.3.8 官方 DMG 都没有 `Contents/Resources/tools/lib/adapter-logic.mjs`，桌面 adapter 以 `ERR_MODULE_NOT_FOUND` 退出。v0.3.8 已打 tag。已经发布的 v0.3.8 DMG 是这次打包修复之前打的包。
 
+## 4d. Claude 面板审批（已完成 2026-11-19）
+
+- **触发方式**：安装器写入 `PermissionRequest` hook（默认 matcher `^Bash$`，`timeout: 45`），只有原生确认框本来会出现时才触发；不是每条 Bash 都拦截。
+- **握手**：hook 写 `claude-approvals/pending/<id>.json`（`schema/id/nonce/sessionId/cwd/tool/command/createdAt`），面板写 `decisions/<id>.json`（`schema/id/nonce/decision/decidedAt`）并追加 `audit.log`；`heartbeat` 由 App 每秒触碰。目录 0700、文件 0600，nonce 防复用。
+- **不经过 bridge**：App 的 feed 定时器直接扫描 pending 目录，bridge 离线也能答；找不到真实聚合行时合成 `claude-approval` 行。
+- **已知限制**：原生确认框与面板并存、先答者生效，原生先答时卡片最多 40 秒后消失；只镜像 `PermissionRequest` 覆盖的工具（默认仅 Bash）；App 未运行（heartbeat 超过 10 秒）时 hook 静默退出，行为与未安装一致。
+- **测试**：Node 纯函数 8 个、hook 集成 6 个、安装器 6 个；Swift 解析/选择/决定 payload 19 个 check。
+
 ## 5. 最近完成（时间线）
 
 | 日期 | 内容 |
 |---|---|
+| 11-19 | **Claude 面板审批**：`PermissionRequest` hook + 本地 pending/decision 握手 + 面板长按允许/拒绝 + 审计；不依赖 bridge，App 不在时回到原生框 |
 | 11-18 | **v0.3.9**：官方 DMG 带上 `tools/lib/adapter-logic.mjs`（来自 PR #11），仍然包含 DSH bridge 和上下两行网速。已发布的 0.3.7 和 0.3.8 漏了这个文件 |
 | 11-18 | **v0.3.8**：官方 DMG 把右上角网速改成上下两行（来自 PR #8，上面下载、下面上传），仍然包含 DSH bridge。这一版和 v0.3.7 都漏了 `adapter-logic.mjs` |
 | 11-18 | **v0.3.7**：官方 DMG 带上 DSH bridge（来自 PR #6），只装安装包也能离开演示模式 |

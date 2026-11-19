@@ -78,6 +78,10 @@ v0.3.6 已打 tag。已经发布的 v0.3.6 DMG 是 bundled-bridge 改动之前�
   只对**已存在的 approval** 作答，不会发 prompt、不会改命令。
 - 每次决定写入 `bridge/audit.log`（0600）：时间、approvalId、sessionId、tool、command、decision、result。
 - 问题（`ask_user_question` / `user-questions/request`）可以在面板里回答：选项按 DSH 给出的 label 提交，允许自填的题可以写自定义文本，取消会发送 `ASK_CANCELLED`。无法安全校验的题型（未知 intent、重复选项等）保持只读，请用「打开 DSH 处理」。
+- **Claude Code 的 Bash 审批（可选）**：`node tools/agentbar-install-adapter.mjs claude` 会安装一个 `PermissionRequest` hook（默认 matcher `^Bash$`）。Claude 要弹原生确认框时，hook 把待审批写进 `~/Library/Application Support/AgentBar/claude-approvals/pending/`，面板 1 秒内出现卡片；长按允许/拒绝会写回 `decisions/` 并追加 `audit.log`。这条通道不经过 bridge/DSH，bridge 离线也能答。
+  - 原生确认框同时出现，**先答的一方生效**；如果先在原生框作答，卡片最多 40 秒后随 hook 超时自行消失。
+  - Agent Bar 没运行（`heartbeat` 超过 10 秒）或 hook 等待超过 40 秒时静默退出，Claude 照常用原生框，不会有任何拦截。
+  - 只镜像 Bash 审批；放宽工具范围用 `--tools '^Bash$|^Edit$'`，不安装用 `--no-approvals`。`uninstall-claude` 会同时清掉审批 hook 和旧版上报 hook。
 - 关闭控制通道：bridge `--no-control`。
 - 系统通知需要在「系统设置 → 通知 → Agent Bar」授权；未授权时仍会有提示音。
 - 还没有授权时，面板里会出现一次说明：可以点「允许通知」拉起系统对话框，或点「以后再说」关掉这张卡片。系统已经拒绝时，卡片改为引导打开「系统设置 → 通知 → Agent Bar」，点「知道了」后不再反复出现。设置页始终可以再请求授权或打开系统设置。应用不会在每次启动时自己弹出系统授权框。
@@ -148,15 +152,15 @@ v0.3.6 已打 tag。已经发布的 v0.3.6 DMG 是 bundled-bridge 改动之前�
 
 ```bash
 node tools/agentbar-install-adapter.mjs codex    # 生成 codex-agentbar wrapper
-node tools/agentbar-install-adapter.mjs claude   # 只打印说明：Claude Code 无需安装
+node tools/agentbar-install-adapter.mjs claude   # 安装 Bash 审批 hook（transcript 状态本来就不需要安装）
 node tools/agentbar-install-adapter.mjs status  # 查看安装状态
-node tools/agentbar-install-adapter.mjs uninstall-claude  # 清理旧版安装的 hooks
+node tools/agentbar-install-adapter.mjs uninstall-claude  # 移除审批 hook 和旧版上报 hooks
 ```
 
-- Claude Code：无需安装。状态条直接读取 `~/.claude/projects/<项目>/<会话>.jsonl`，显示项目、分支、当前工具、最新思考和今日 token（按 `message.id` 去重，不含缓存读取）。旧版装过 hooks 的，执行一次 `uninstall-claude` 清掉，避免同一个会话出现两行。
+- Claude Code：状态读取无需安装。状态条直接读取 `~/.claude/projects/<项目>/<会话>.jsonl`，显示项目、分支、当前工具、最新思考和今日 token（按 `message.id` 去重，不含缓存读取）。`claude` 命令额外安装一个可选的 `PermissionRequest` hook（默认只匹配 `^Bash$`），让 Bash 审批也出现在 Agent Bar 面板；详见上方「通知与审批」。旧版装过上报 hooks 的，执行一次 `uninstall-claude` 清掉，避免同一个会话出现两行。
 - Codex：生成 `~/Library/Application Support/AgentBar/adapters/codex-agentbar`，按输出提示加 alias。
   升级前装过旧 wrapper 的，再执行一次本命令即可换成独立的 `codex-cli` 报告 id，避免和桌面 adapter 抢同一个 `agents/codex.json`。
-- 两者都只是状态上报。审批仍在各自的工具里处理：面板不会为它们显示「允许」。
+- Claude Code 的 Bash 审批可以代答；Codex 以及其它外部 agent 仍只上报状态，审批在各自的工具里处理。
 
 ### 外部 agent 接入（Codex / Claude Code / 任意 CLI）
 
@@ -193,7 +197,7 @@ node tools/agentbar-app-adapters.mjs          # 前台 watch（start.sh 会后�
 tail -f /tmp/agentbar-adapters.log
 ```
 
-限制：每个 App 最多显示 3 个活跃会话，没有官方 API，状态是从本地数据推断的。Hermes 只读 `sessions` / `messages` 里白名单列，不写 `state.db`，也不把累计 token 当成今日用量。命名 profile 只有在 `HERMES_HOME` 指向该目录时才会被读到。外部 App 的审批仍是只读，子会话只能看、不能单独跳转到 App 内的任务。
+限制：每个 App 最多显示 3 个活跃会话，没有官方 API，状态是从本地数据推断的。Hermes 只读 `sessions` / `messages` 里白名单列，不写 `state.db`，也不把累计 token 当成今日用量。命名 profile 只有在 `HERMES_HOME` 指向该目录时才会被读到。外部 App 的审批仍是只读（Claude Code 的 Bash 审批由上面的 `PermissionRequest` hook 单独处理，不走这个 adapter），子会话只能看、不能单独跳转到 App 内的任务。
 App 退出后 adapter 会自动移除对应图标。
 
 ### 目前各 App 的支持程度（2026-11-17）
@@ -202,7 +206,7 @@ App 退出后 adapter 会自动移除对应图标。
 |---|---|---|---|
 | **DeepSeek Harness（DSH）** | ✅ 原生 bridge（非官方） | ✅ | ✅ 审批双向；可校验的提问可在面板回答 |
 | **Codex**（ChatGPT.app / CLI） | ✅ 桌面 App adapter（本地 SQLite）；CLI 另有 wrapper | ✅ 命令 / 文件 / reasoning | ❌ 只读。审批协议是当前 `codex app-server` 连接上的 `item/commandExecution/requestApproval`，Agent Bar 不是那条连接 |
-| **Claude Code** | ✅ 自动读取本地会话（无需安装） | ✅ 工具 / 思考 | ❌ 只读。允许/拒绝只能由当次 `PreToolUse` hook 输出；状态条读取的是 transcript，不阻塞、不另发 prompt |
+| **Claude Code** | ✅ 自动读取本地会话（无需安装） | ✅ 工具 / 思考 | ✅ Bash 审批可在面板长按允许/拒绝（可选 `PermissionRequest` hook；与原生框竞态，先答者生效） |
 | **WorkBuddy** | ✅ 本机 trace adapter | ✅ 当前 span（无自然语言 thought） | ❌ 只读。trace 不是带 token 和 pending id 的控制接口 |
 | **Grok Bot** | ✅ 本机 persistence adapter | ⚠️ 最近对话，无 reasoning 细分 | ❌ 只读。本地 blob 不是控制通道 |
 | **Hermes** | ✅ 本机 `state.db`（进程在跑且库可读时）；否则仍是演示 | ⚠️ 最近一条消息，推断状态 | ❌ 只读。`state.db` 没有审批回调 |
