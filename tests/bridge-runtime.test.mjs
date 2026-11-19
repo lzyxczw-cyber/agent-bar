@@ -27,6 +27,11 @@ async function waitFor(predicate, timeoutMs) {
 // Regression: startSocket used to await a promise that never settled when the
 // bind failed, so main() never reached scheduleTick and status.json was never
 // written. A bad socket path must degrade the socket, not kill the feed.
+//
+// Bind into a missing directory rather than an over-long path: macOS caps
+// sun_path at 104 bytes, but the limit is not enforced the same way on every
+// runner, so a long path can bind successfully in CI and turn this into a
+// false failure. A missing parent always fails at listen time on every OS.
 test('a status socket that cannot bind does not stall the feed', async () => {
   const root = shortTempRoot('ab-sock-');
   const out = path.join(root, 'status.json');
@@ -38,7 +43,7 @@ test('a status socket that cannot bind does not stall the feed', async () => {
     '--url', 'http://127.0.0.1:1',
     '--interval', '250',
     '--out', out,
-    '--socket', path.join(root, 's'.repeat(110) + '.sock'),
+    '--socket', path.join(root, 'missing-dir', 'bridge.sock'),
     '--control-dir', path.join(root, 'control'),
     '--agents-dir', path.join(root, 'agents')
   ], { stdio: ['ignore', 'pipe', 'pipe'] });
