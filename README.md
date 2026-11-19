@@ -327,7 +327,7 @@ agent-bar/
 
 ## 接下来
 
-v0.3.4 有双向审批、一键接入、桌面 adapter、多显示器、用量趋势和签名公证。v0.3.5 加上 GitHub Release 更新检查和通知授权引导。v0.3.6 加上 Hermes 的本机 `state.db` 读取、把外部审批明确保持只读，并补了布局、用量累加、提问校验和 adapter 推断的测试。v0.3.6 已打 tag；当时发布的官方 DMG 是 bridge 打进包之前构建的。v0.3.7 把 DSH bridge（PR #6）放进了官方 DMG，只装安装包也能离开演示模式。v0.3.8 把右上角网速改成上下两行（上面下载、下面上传，来自 PR #8），并且仍然包含这份 bridge。已发布的 0.3.7 和 0.3.8 官方 DMG 都漏了 `tools/lib/adapter-logic.mjs`，桌面 adapter 起不来。v0.3.9 把 `tools/lib/adapter-logic.mjs` 打进了官方 DMG，并把 App 图标换成了确认版。目前没有排期中的事项。
+v0.3.4 有双向审批、一键接入、桌面 adapter、多显示器、用量趋势和签名公证。v0.3.5 加上 GitHub Release 更新检查和通知授权引导。v0.3.6 加上 Hermes 的本机 `state.db` 读取、把外部审批明确保持只读，并补了布局、用量累加、提问校验和 adapter 推断的测试。v0.3.6 已打 tag；当时发布的官方 DMG 是 bridge 打进包之前构建的。v0.3.7 把 DSH bridge（PR #6）放进了官方 DMG，只装安装包也能离开演示模式。v0.3.8 把右上角网速改成上下两行（上面下载、下面上传，来自 PR #8），并且仍然包含这份 bridge。已发布的 0.3.7 和 0.3.8 官方 DMG 都漏了 `tools/lib/adapter-logic.mjs`，桌面 adapter 起不来。v0.3.9 把 `tools/lib/adapter-logic.mjs` 打进了官方 DMG。App 图标和插电电池指示已在 `main` 合入，会随下一版官方包发布；下一版尚未打 tag。
 
 ## 许可与权利声明
 
