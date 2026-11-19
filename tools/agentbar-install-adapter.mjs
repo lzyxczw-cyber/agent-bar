@@ -7,7 +7,8 @@
  *   node tools/agentbar-install-adapter.mjs status
  *   node tools/agentbar-install-adapter.mjs uninstall-claude
  *
- * Claude Code: merges PreToolUse/Stop hooks into ~/.claude/settings.json.
+ * Claude Code: sessions are read from local transcripts; no install needed.
+ *   uninstall-claude removes hooks left by older versions.
  * Codex: writes a heartbeat wrapper and prints the one-line alias to add.
  *
  * Only local files; never sends network requests.
@@ -147,7 +148,10 @@ function status() {
   }
   console.log('Agent Bar adapters');
   console.log('  report:        ' + REPORT);
-  console.log('  Claude Code:   ' + (installed > 0 ? installed + ' hook(s) in ' + CLAUDE_SETTINGS : 'not installed'));
+  const claudeState = installed > 0
+    ? 'transcript mode; ' + installed + ' legacy hook(s) in ' + CLAUDE_SETTINGS + ' — run uninstall-claude'
+    : 'transcript mode (no hooks needed)';
+  console.log('  Claude Code:   ' + claudeState);
   console.log('  Codex wrapper: ' + (fs.existsSync(path.join(ADAPTERS, 'codex-agentbar')) ? path.join(ADAPTERS, 'codex-agentbar') : 'not installed'));
 }
 
