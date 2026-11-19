@@ -67,6 +67,26 @@ func batterySymbol(_ percent: Int) -> String {
     return "battery.0"
 }
 
+/// Notebook battery glyph. `powerSymbol` is set while external power is connected.
+///
+/// macOS 14 has `battery.0` / `.25` / `.50` / `.75` / `.100`, and a bolt only on
+/// the full battery (`battery.100.bolt`). That glyph always looks full, so a
+/// partial charge keeps its level symbol and adds `bolt.fill` (present since
+/// macOS 10.15). `charging` alone is not enough: IOPS reports it false once the
+/// pack is full but the adapter is still connected, while `acPower` stays true.
+struct BatteryIndicator: Equatable {
+    var levelSymbol: String
+    var powerSymbol: String?
+}
+
+func batteryIndicator(percent: Int, acPower: Bool, charging: Bool) -> BatteryIndicator {
+    let pluggedIn = acPower || charging
+    return BatteryIndicator(
+        levelSymbol: batterySymbol(percent),
+        powerSymbol: pluggedIn ? "bolt.fill" : nil
+    )
+}
+
 func weatherSymbol(_ code: Int?) -> String {
     guard let code = code else { return "cloud" }
     switch code {
