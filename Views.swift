@@ -1134,8 +1134,7 @@ struct BarView: View {
     private var batteryView: some View {
         HStack(spacing: 3) {
             if sys.hasBattery, let percent = sys.batteryPercent {
-                Image(systemName: sys.batteryCharging ? "battery.100.bolt" : batterySymbol(percent))
-                    .font(.system(size: 10.5, weight: .medium))
+                notebookBattery(percent: percent)
                 Text("\(percent)%")
                     .font(.system(size: 10, weight: .medium, design: .monospaced))
             } else {
@@ -1146,6 +1145,30 @@ struct BarView: View {
             }
         }
         .foregroundStyle(Color.white.opacity(0.55))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(batteryHelp)
+        .help(batteryHelp)
+    }
+
+    /// Level glyph plus a compact bolt when the adapter is connected, including
+    /// a full battery that is no longer charging (`acPower`, not only `batteryCharging`).
+    private func notebookBattery(percent: Int) -> some View {
+        let indicator = batteryIndicator(percent: percent, acPower: sys.acPower, charging: sys.batteryCharging)
+        return HStack(spacing: 1) {
+            Image(systemName: indicator.levelSymbol)
+                .font(.system(size: 10.5, weight: .medium))
+            if let power = indicator.powerSymbol {
+                Image(systemName: power)
+                    .font(.system(size: 7, weight: .bold))
+                    .foregroundStyle(Color.white.opacity(0.92))
+            }
+        }
+    }
+
+    private var batteryHelp: String {
+        guard sys.hasBattery, let percent = sys.batteryPercent else { return "交流电源" }
+        let onPower = batteryIndicator(percent: percent, acPower: sys.acPower, charging: sys.batteryCharging).powerSymbol != nil
+        return onPower ? "已接通电源 \(percent)%" : "电池供电 \(percent)%"
     }
 
     private var wifiView: some View {

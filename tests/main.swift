@@ -23,6 +23,42 @@ check(batterySymbol(13) == "battery.25", "battery 13 boundary")
 check(batterySymbol(12) == "battery.0", "battery 12")
 check(batterySymbol(0) == "battery.0", "battery 0")
 
+// Plugged-in is separate from the level glyph. A full pack on AC is not charging,
+// and macOS 14 has no partial battery.N.bolt symbol (only battery.100.bolt).
+check(
+    batteryIndicator(percent: 100, acPower: true, charging: false)
+        == BatteryIndicator(levelSymbol: "battery.100", powerSymbol: "bolt.fill"),
+    "full, plugged in, not charging"
+)
+check(
+    batteryIndicator(percent: 100, acPower: false, charging: false)
+        == BatteryIndicator(levelSymbol: "battery.100", powerSymbol: nil),
+    "full on battery"
+)
+check(
+    batteryIndicator(percent: 64, acPower: true, charging: true)
+        == BatteryIndicator(levelSymbol: "battery.75", powerSymbol: "bolt.fill"),
+    "charging keeps the level glyph"
+)
+check(
+    batteryIndicator(percent: 87, acPower: true, charging: false).levelSymbol == "battery.75",
+    "plugged-in still uses the 87 boundary"
+)
+check(
+    batteryIndicator(percent: 40, acPower: false, charging: true)
+        == BatteryIndicator(levelSymbol: "battery.50", powerSymbol: "bolt.fill"),
+    "charging implies external power"
+)
+check(
+    batteryIndicator(percent: 10, acPower: false, charging: false)
+        == BatteryIndicator(levelSymbol: "battery.0", powerSymbol: nil),
+    "low on battery"
+)
+check(
+    batteryIndicator(percent: 50, acPower: true, charging: true).powerSymbol == "bolt.fill",
+    "plugged-in mark is bolt.fill"
+)
+
 // Weather code mapping: WMO direct + wttr.in WWO conversion.
 check(weatherSymbol(nil) == "cloud", "weather nil")
 check(weatherSymbol(0) == "sun.max.fill", "weather clear")
