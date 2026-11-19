@@ -1359,6 +1359,7 @@ struct PanelView: View {
     @State private var questionCustom: [String: String] = [:]
     @AppStorage("AgentBarNotificationsEnabled") private var notificationsEnabled = true
     @AppStorage("AgentBarShowChineseThought") private var showChineseThought = true
+    @AppStorage("AgentBarTranslateExternalThoughts") private var translateExternalThoughts = false
     @AppStorage("AgentBarNotificationPromptDismissed") private var notificationPromptDismissed = false
     @AppStorage("AgentBarNotificationSettingsHintDismissed") private var notificationSettingsHintDismissed = false
 
@@ -2098,7 +2099,12 @@ struct PanelView: View {
                     }
                 }
                 HStack(spacing: 8) {
-                    if needsHold {
+                    if store.feedMode == .offline {
+                        Text("bridge 离线 · 回答暂时无法提交，等待自动重连")
+                            .font(.system(size: 10.5, weight: .medium))
+                            .foregroundStyle(Color(red: 1.0, green: 0.80, blue: 0.38).opacity(0.9))
+                        Spacer()
+                    } else if needsHold {
                         HoldToConfirmButton(title: "按住提交", icon: "checkmark", tint: Color(red: 0.46, green: 0.90, blue: 0.62)) {
                             submitQuestion(agent, cancelled: false)
                         }
@@ -2180,7 +2186,16 @@ struct PanelView: View {
                 .lineLimit(2)
 
             HStack(spacing: 8) {
-                if store.isLive {
+                if store.feedMode == .offline {
+                    // isLive stays true after the first successful feed, so
+                    // gate on the feed mode: a dead bridge would accept the
+                    // hold but never process the request file.
+                    Text("bridge 离线 · 审批暂时无法提交，等待自动重连")
+                        .font(.system(size: 10.5, weight: .medium))
+                        .foregroundStyle(Color(red: 1.0, green: 0.80, blue: 0.38).opacity(0.9))
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer()
+                } else if store.isLive {
                     VStack(alignment: .leading, spacing: 8) {
                         HStack(spacing: 8) {
                             if agent.isExternal {
@@ -2492,6 +2507,16 @@ struct PanelView: View {
                         .labelsHidden()
                         .toggleStyle(.switch)
                         .controlSize(.small)
+                }
+
+                settingsRow(title: "外部 App 思考也中文化", subtitle: "默认关闭；开启后会把 Codex / WorkBuddy 等本地推理发往 DeepSeek") {
+                    Toggle("", isOn: $translateExternalThoughts)
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                        .controlSize(.small)
+                        .onChange(of: translateExternalThoughts) { _, _ in
+                            NotificationCenter.default.post(name: .agentBarRestartBridge, object: nil)
+                        }
                 }
 
                 settingsRow(title: "天气位置", subtitle: "\(weatherPlaceName) · 搜索城市，选择后立即刷新") {

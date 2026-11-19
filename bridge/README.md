@@ -73,6 +73,8 @@ Options:
 --all                  include every known session (168 on this machine; verbose)
 --once                 discover, print one snapshot to stdout, exit
 --no-translate         disable thoughtZh translation (enabled by default)
+--translate-external   also translate external agents' thoughts (opt-in: sends
+                       Codex/WorkBuddy/... local reasoning to the DeepSeek API)
 --no-external          ignore external agent reports
 --agents-dir <dir>     external report directory (default: ~/Library/Application Support/AgentBar/agents;
                        env AGENTBAR_AGENTS_DIR also works)
@@ -458,11 +460,17 @@ All new fields are optional; consumers can ignore them.
 
 ---
 
-## 10. `thoughtZh` — localized thinking (on by default)
+## 10. `thoughtZh` — localized thinking (on by default for DSH)
 
 The notch UI is Chinese-first, so the bridge can translate each agent's latest
 English reasoning into Simplified Chinese. The result is a **separate field**;
 `agents[].thought` always keeps the original text and encoding.
+
+Translation applies to **DSH sessions by default**. External agent reports
+(Codex reasoning, WorkBuddy spans, any `tools/agentbar-report.mjs --thought`)
+come from other applications' local state and are **not** sent to a third-party
+API unless `--translate-external` is passed. Without that flag their `thought`
+is shown as-is and `thoughtZh` stays `null`.
 
 - **Key resolution** (in this order; the environment wins):
   1. `$DEEPSEEK_API_KEY`
@@ -549,7 +557,7 @@ the reporter CLI).
 | `name` | string | display name, defaults to `id` |
 | `status` | string | `idle` (待命, has not started), `running`, `waiting`, `done` (this round ended), `failed`. Anything else is `idle`, not `done` |
 | `project` / `tool` / `detail` | string | shown as-is; `tool`/`detail` are the "current action" line |
-| `thought` | string | latest reasoning; translated to `thoughtZh` when §10 is on |
+| `thought` | string | latest reasoning; translated to `thoughtZh` only with `--translate-external` (DSH sessions are translated by default) |
 | `tokens` | number | optional token counter |
 | `startedAt` | number (ms) | first report time; preserved by the CLI |
 | `updatedAt` | number (ms) | heartbeat time; defaults to the file mtime |

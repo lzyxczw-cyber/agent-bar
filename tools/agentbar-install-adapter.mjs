@@ -53,7 +53,7 @@ function readJSON(file, fallback) {
 function removeOurHooks(node) {
   let changed = false;
   const hooks = node && typeof node === 'object' ? node.hooks : null;
-  if (!hooks || typeof hooks !== 'object') return node;
+  if (!hooks || typeof hooks !== 'object') return { node, changed: false };
   for (const event of Object.keys(hooks)) {
     const groups = hooks[event];
     if (!Array.isArray(groups)) continue;
@@ -73,6 +73,7 @@ function removeOurHooks(node) {
     if (nextGroups.length === 0) delete hooks[event];
     else hooks[event] = nextGroups;
   }
+  if (Object.keys(hooks).length === 0) delete node.hooks;
   return { node, changed };
 }
 
@@ -88,11 +89,13 @@ function installClaude() {
   hooks.PreToolUse = Array.isArray(hooks.PreToolUse) ? hooks.PreToolUse : [];
   hooks.PreToolUse.push({
     matcher: '*',
-    hooks: [{ type: 'command', command: hookCommand('claude-code', "--name 'Claude Code' --status running --tool 'Claude Code' --project \"$(basename \"$PWD\")\"") }]
+    // Every tool call spawns Node for a few dozen milliseconds; keep a short
+    // timeout so a missing node binary or a stuck write cannot stall a turn.
+    hooks: [{ type: 'command', timeout: 5, command: hookCommand('claude-code', "--name 'Claude Code' --status running --tool 'Claude Code' --project \"$(basename \"$PWD\")\"") }]
   });
   hooks.Stop = Array.isArray(hooks.Stop) ? hooks.Stop : [];
   hooks.Stop.push({
-    hooks: [{ type: 'command', command: hookCommand('claude-code', '--status done') }]
+    hooks: [{ type: 'command', timeout: 5, command: hookCommand('claude-code', '--status done') }]
   });
   node.hooks = hooks;
   fs.mkdirSync(path.dirname(CLAUDE_SETTINGS), { recursive: true, mode: 0o700 });
@@ -129,9 +132,9 @@ set -u
 NODE=${shellQuote(process.execPath)}
 REPORT=${shellQuote(REPORT)}
 PROJECT="$(basename "$PWD")"
-"$NODE" "$REPORT" --id codex --name Codex --status running --project "$PROJECT" --tool "Codex" >/dev/null 2>&1
+"$NODE" "$REPORT" --id codex-cli --name "Codex CLI" --status running --project "$PROJECT" --tool "Codex" >/dev/null 2>&1
 ( while sleep 45; do
-    "$NODE" "$REPORT" --id codex --status running --project "$PROJECT" >/dev/null 2>&1
+    "$NODE" "$REPORT" --id codex-cli --status running --project "$PROJECT" >/dev/null 2>&1
   done ) &
 HEARTBEAT=$!
 ORIGINAL="\${AGENTBAR_CODEX_BIN:-$(command -v codex || true)}"
@@ -144,9 +147,9 @@ fi
 STATUS=$?
 kill "$HEARTBEAT" 2>/dev/null
 if [ "$STATUS" -eq 0 ]; then
-  "$NODE" "$REPORT" --id codex --status done --detail "exit 0" >/dev/null 2>&1
+  "$NODE" "$REPORT" --id codex-cli --status done --detail "exit 0" >/dev/null 2>&1
 else
-  "$NODE" "$REPORT" --id codex --status failed --detail "exit $STATUS" >/dev/null 2>&1
+  "$NODE" "$REPORT" --id codex-cli --status failed --detail "exit $STATUS" >/dev/null 2>&1
 fi
 exit "$STATUS"
 `;

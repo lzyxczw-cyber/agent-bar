@@ -67,6 +67,7 @@ function usage () {
     '  --once                discover + print one snapshot to stdout, then exit',
     '  --no-translate        disable thoughtZh (DeepSeek) translation',
     '  --no-external         ignore external agent reports (AgentBar/agents/*.json)',
+    '  --translate-external  also translate external agents\' thoughts (sends them to the DeepSeek API)',
     '  --agents-dir <dir>    external agent report directory (env AGENTBAR_AGENTS_DIR also works)',
     '  --no-control          disable the local approval-control channel',
     '  --control-dir <dir>   approval-control directory (default: <bridge>/control)',
@@ -91,6 +92,10 @@ function parseArgs (argv) {
     ws: true,
     socket: true,
     translate: true,
+    // External agent thoughts come from other apps' local state (Codex
+    // reasoning, WorkBuddy spans). Sending them to a third-party API is
+    // opt-in; DSH reasoning keeps being translated by default.
+    translateExternal: false,
     external: true,
     agentsDir: defaultAgentsDir (),
     control: true,
@@ -113,6 +118,7 @@ function parseArgs (argv) {
     else if (arg === '--all') config.all = true;
     else if (arg === '--once') config.once = true;
     else if (arg === '--no-translate') config.translate = false;
+    else if (arg === '--translate-external') config.translateExternal = true;
     else if (arg === '--no-external') config.external = false;
     else if (arg === '--agents-dir') config.agentsDir = path.resolve (next ());
     else if (arg === '--no-control') config.control = false;
@@ -575,7 +581,7 @@ class DshBridge {
       const thought = this.thoughts.get (session.id);
       if (thought) this.translator.observe (session.id, thought);
     }
-    for (const row of this.externalAgents) {
+    if (this.config.translateExternal) for (const row of this.externalAgents) {
       if (row.thought) this.translator.observe (row.id, row.thought);
     }
   }
@@ -1099,6 +1105,11 @@ class DshBridge {
           this.auditControl ({ source: 'notch', result: 'invalid-json', file: name });
           continue;
         }
+        // Fall back to the request file's mtime so a client that omits
+        // requestedAt cannot keep a replayable decision alive forever.
+        if (request && typeof request === 'object' && !Number.isFinite (request.requestedAt)) {
+          request.requestedAt = stat.mtimeMs;
+        }
         const valid = this.validateControlRequest (request);
         if (!valid.ok) {
           this.safeUnlink (file);
@@ -1184,9 +1195,27 @@ class DshBridge {
         try { client.write (JSON.stringify ({ type: 'snapshot', ...this.lastSnapshot }) + '\n'); } catch {}
       }
     });
+    // A failed bind must not hang the bridge: status.json is the primary feed,
+    // and main() only starts ticking after this returns.
+    const listening = await new Promise ((resolve) => {
+      const onError = (error) => {
+        server.removeListener ('error', onError);
+        log ('socket unavailable: ' + error.message);
+        resolve (false);
+      };
+      server.once ('error', onError);
+      server.listen (this.config.socketPath, () => {
+        server.removeListener ('error', onError);
+        resolve (true);
+      });
+    });
+    if (!listening) return;
+    try {
+      fs.chmodSync (this.config.socketPath, 0o600);
+    } catch (error) {
+      log ('socket chmod failed: ' + error.message);
+    }
     server.on ('error', (error) => log ('socket server error: ' + error.message));
-    await new Promise ((resolve) => server.listen (this.config.socketPath, resolve));
-    fs.chmodSync (this.config.socketPath, 0o600);
     this.socketServer = server;
     log ('status socket: ' + this.config.socketPath);
   }
@@ -1196,6 +1225,8 @@ class DshBridge {
     this.shuttingDown = true;
     log ('stopping (' + reason + ')');
     if (this.tickTimer) clearTimeout (this.tickTimer);
+    // Persist the last few seconds of usage instead of waiting for the 30 s save.
+    try { this.saveUsageState (); } catch {}
     try { if (this.events) this.events.close (); } catch {}
     try { if (this.mux) await this.mux.close (); } catch {}
     for (const client of this.socketClients) { try { client.destroy (); } catch {} }

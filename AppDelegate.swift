@@ -23,7 +23,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private var feedTimer: Timer?
     private var feedURL: URL?
     private var lastFeedSuccess = Date.distantPast
+    /// Last time status.json decoded and was fresh. The bridge rewrites it every
+    /// 5 s even while DSH is unreachable, so this says "bridge is alive", not
+    /// "DSH is connected".
+    private var lastFeedRead = Date.distantPast
+    private var lastDecodeErrorLog = Date.distantPast
     private var bridgeProcess: Process?
+    private var bridgeStartedAt = Date.distantPast
+    private var bridgeRestartDelay: TimeInterval = 2
+    private var isTerminating = false
     private var bridgeLogHandle: FileHandle?
     private var bridgeWatchdog: Timer?
     private var appAdapterProcess: Process?
@@ -84,6 +92,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             object: nil
         )
 
+        NotificationCenter.default.addObserver(forName: .agentBarRestartBridge, object: nil, queue: .main) { [weak self] _ in
+            self?.restartBridgeForSettingsChange()
+        }
+
         dlog("[agentbar] launched. autoHideMode=\(autoHideMode) screen=\(screenDescription())")
         dlog("[agentbar] controls: click top bar = expand/collapse, push cursor to top edge = yield to system menu bar, ⌃⌥⌘Q = quit")
 
@@ -118,6 +130,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        isTerminating = true
         pollTimer?.invalidate()
         feedTimer?.invalidate()
         bridgeWatchdog?.invalidate()
@@ -439,12 +452,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     private func loadLiveFeed() {
-        guard let url = feedURL, let data = try? Data(contentsOf: url),
-              let feed = try? JSONDecoder().decode(LiveFeed.self, from: data) else { return }
+        guard let url = feedURL, let data = try? Data(contentsOf: url) else { return }
+        let feed: LiveFeed
+        do {
+            feed = try JSONDecoder().decode(LiveFeed.self, from: data)
+        } catch {
+            // A silent decode failure used to freeze the bar on stale data with
+            // no clue in the log. Keep it throttled so a bad bridge build does
+            // not flood the log at 1 Hz.
+            if Date().timeIntervalSince(lastDecodeErrorLog) > 60 {
+                lastDecodeErrorLog = Date()
+                dlog("[agentbar] status.json decode failed: \(error)")
+            }
+            return
+        }
         store.controlDirectory = url.deletingLastPathComponent().appendingPathComponent("control", isDirectory: true)
         let nowMs = Date().timeIntervalSince1970 * 1000.0
         let ageMs = nowMs - (feed.ts ?? 0)
         let fresh = ageMs >= 0 && ageMs < 15000
+        // Track the snapshot's own timestamp, not the read time: the feed stays
+        // "fresh" for 15 s after the bridge dies, and that would delay recovery.
+        if fresh { lastFeedRead = Date(timeIntervalSince1970: (feed.ts ?? nowMs) / 1000.0) }
         let connected = feed.dsh?.connected == true
         let bridgeAlive: Bool = {
             guard let pid = feed.bridge?.pid else { return false }
@@ -609,9 +637,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     private func startBridgeWatchdog() {
         guard !CommandLine.arguments.contains("--no-bridge") else { return }
+        lastFeedRead = Date()
         let timer = Timer(timeInterval: 20.0, repeats: true) { [weak self] _ in
             guard let self = self else { return }
-            if !self.store.isLive && self.bridgeProcess == nil {
+            if let process = self.bridgeProcess, !process.isRunning {
+                self.bridgeProcess = nil
+            }
+            // A fresh status.json means some bridge is alive (ours, or one that
+            // start.sh launched). The bridge heartbeats every 5 s, so 12 s
+            // without an update is already stale. Leave a live bridge alone
+            // instead of re-logging it.
+            if Date().timeIntervalSince(self.lastFeedRead) <= 12 { return }
+            guard let process = self.bridgeProcess else {
+                self.ensureBridgeRunning()
+                return
+            }
+            // Our bridge is alive but has not published a snapshot for 90 s:
+            // it wedged before or during its first tick (for example when its
+            // status socket could not bind). Recycle it instead of staying
+            // offline until the app is restarted.
+            if Date().timeIntervalSince(self.lastFeedRead) > 90 {
+                dlog("[agentbar] bridge unresponsive; restarting")
+                process.terminate()
+                self.bridgeProcess = nil
                 self.ensureBridgeRunning()
             }
         }
@@ -717,6 +765,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         return urls
     }
 
+    /// The bridge reads some settings only at launch (for example whether
+    /// external thoughts may be translated). Recycle the app-managed process
+    /// so a toggle takes effect immediately.
+    private func restartBridgeForSettingsChange() {
+        guard let process = bridgeProcess, process.isRunning else { return }
+        dlog("[agentbar] settings changed; restarting bridge")
+        process.terminate()
+        bridgeProcess = nil
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+            self?.ensureBridgeRunning()
+        }
+    }
+
     private func ensureBridgeRunning() {
         guard bridgeProcess == nil, let feedURL = feedURL else { return }
         if let data = try? Data(contentsOf: feedURL),
@@ -737,10 +798,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
         let process = Process()
         let logPath = "/tmp/agentbar-bridge.log"
+        rotateLogIfNeeded(logPath)
         // Launch through /bin/sh with real shell redirection: this avoids inheriting
         // the GUI app's stdio setup, which can leave a Node child with no visible output.
         process.executableURL = URL(fileURLWithPath: "/bin/sh")
-        let nodeCommand = ([node.url.path] + node.prefixArgs + [script.path])
+        var bridgeArgs = [node.url.path] + node.prefixArgs + [script.path]
+        // External thoughts (Codex reasoning, WorkBuddy spans) stay local unless
+        // the user opts in from Settings.
+        if UserDefaults.standard.bool(forKey: "AgentBarTranslateExternalThoughts") {
+            bridgeArgs.append("--translate-external")
+        }
+        let nodeCommand = bridgeArgs
             .map { "'" + $0.replacingOccurrences(of: "'", with: "'\\''") + "'" }
             .joined(separator: " ")
         process.arguments = ["-c", "exec " + nodeCommand + " >> " + "'" + logPath + "' 2>&1"]
@@ -749,13 +817,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
         process.terminationHandler = { [weak self] proc in
             DispatchQueue.main.async {
+                guard let self = self else { return }
                 dlog("[agentbar] bridge exited: status=\(proc.terminationStatus)")
-                self?.bridgeProcess = nil
+                // A stale handler for a replaced process must not clear the new one.
+                if self.bridgeProcess === proc { self.bridgeProcess = nil }
+                guard !self.isTerminating, self.bridgeProcess == nil else { return }
+                // Restart without waiting for the 20 s watchdog. Back off when
+                // the bridge dies immediately (missing Node, bad script, ...)
+                // so a permanent failure does not become a spawn loop.
+                if Date().timeIntervalSince(self.bridgeStartedAt) < 20 {
+                    self.bridgeRestartDelay = min(self.bridgeRestartDelay * 2, 60)
+                } else {
+                    self.bridgeRestartDelay = 2
+                }
+                let delay = self.bridgeRestartDelay
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                    self?.ensureBridgeRunning()
+                }
             }
         }
         do {
             try process.run()
             bridgeProcess = process
+            bridgeStartedAt = Date()
             dlog("[agentbar] bridge started: \(script.path) pid=\(process.processIdentifier)")
         } catch {
             dlog("[agentbar] bridge failed to start: \(error)")

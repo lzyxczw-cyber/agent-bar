@@ -9,6 +9,11 @@ import UserNotifications
 
 // MARK: - Utilities
 
+extension Notification.Name {
+    /// A UserDefaults setting the bridge reads at launch changed; recycle it.
+    static let agentBarRestartBridge = Notification.Name("AgentBarRestartBridge")
+}
+
 let clockFormatter: DateFormatter = {
     let f = DateFormatter()
     f.dateFormat = "HH:mm"
@@ -343,14 +348,18 @@ func agentIconFrameIndex(time: Double, interval: Double, frameCount: Int, phase:
     return abs(Int(shifted / interval)) % frameCount
 }
 
+/// Keep a log file bounded by rotating it once (file -> file.1) at startup.
+func rotateLogIfNeeded(_ path: String, maxBytes: Int = 2 * 1024 * 1024) {
+    guard let size = try? FileManager.default.attributesOfItem(atPath: path)[.size] as? Int,
+          size > maxBytes else { return }
+    try? FileManager.default.removeItem(atPath: path + ".1")
+    try? FileManager.default.moveItem(atPath: path, toPath: path + ".1")
+}
+
 let logHandle: FileHandle? = {
     let path = "/tmp/agentbar.log"
     // Keep the log bounded: rotate once at startup when it grows past 2 MB.
-    if let size = try? FileManager.default.attributesOfItem(atPath: path)[.size] as? Int,
-       size > 2 * 1024 * 1024 {
-        try? FileManager.default.removeItem(atPath: path + ".1")
-        try? FileManager.default.moveItem(atPath: path, toPath: path + ".1")
-    }
+    rotateLogIfNeeded(path)
     FileManager.default.createFile(atPath: path, contents: nil)
     return FileHandle(forWritingAtPath: path)
 }()
