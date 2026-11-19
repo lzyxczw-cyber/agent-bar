@@ -21,13 +21,20 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import {
   aggregateApp,
+  CLAUDE_ACTIVE_MS,
+  CLAUDE_BACKFILL_BYTES,
+  CLAUDE_READ_BYTES,
+  claudeRecordUpdate,
+  claudeReport,
   codexStandbyStatus,
+  createClaudeState,
   grokActivityStatus,
   hermesIdleReport,
   hermesMessageSelect,
   hermesSessionSelect,
   inferHermesRunning,
   latestHermesMessages,
+  mergeClaudeState,
   normalizeHermesSession,
   workbuddyStandbyStatus
 } from './lib/adapter-logic.mjs';
@@ -38,6 +45,8 @@ const AGENTS_DIR = path.join(APP_SUPPORT, 'agents');
 const LOCK_FILE = path.join(APP_SUPPORT, 'agentbar-app-adapters.lock');
 const SOURCE = 'agentbar-app-adapters';
 const TICK_MS = 3000;
+const CLAUDE_PROJECTS = path.join(process.env.CLAUDE_CONFIG_DIR || path.join(HOME, '.claude'), 'projects');
+const claudeFiles = new Map(); // file path -> { state, startedAt, offset, partial, warned }
 
 const once = process.argv.includes('--once');
 const owned = new Map(); // group -> Set(report ids)
@@ -538,6 +547,137 @@ function hermesReports() {
   return running.length > 0 ? running : [hermesIdleReport(sessionRows, now, messages)];
 }
 
+// MARK: Claude Code
+
+function readRange(file, start, length) {
+  const fd = fs.openSync(file, 'r');
+  try {
+    const buffer = Buffer.allocUnsafe(length);
+    const read = fs.readSync(fd, buffer, 0, length, start);
+    return buffer.subarray(0, read).toString('utf8');
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
+function dropFirstLine(text) {
+  const index = text.indexOf('\n');
+  return index === -1 ? '' : text.slice(index + 1);
+}
+
+function applyClaudeChunk(entry, chunk, now) {
+  const data = entry.partial + chunk;
+  const lines = data.split('\n');
+  entry.partial = lines.pop();
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    let record;
+    try { record = JSON.parse(trimmed); } catch { continue; }
+    const update = claudeRecordUpdate(record);
+    if (update) entry.state = mergeClaudeState(entry.state, update, now);
+  }
+}
+
+function syncClaudeFile(file, now) {
+  const stat = fs.statSync(file);
+  if (!stat.isFile() || stat.size === 0) return null;
+  let entry = claudeFiles.get(file);
+  if (!entry) {
+    entry = { state: createClaudeState(), startedAt: now, offset: 0, partial: '', warned: false };
+    claudeFiles.set(file, entry);
+  }
+  if (stat.size < entry.offset) {
+    entry.state = createClaudeState();
+    entry.offset = 0;
+    entry.partial = '';
+    entry.startedAt = now;
+  }
+  if (entry.offset === stat.size) return entry;
+  if (entry.offset === 0) {
+    // First sight (or a truncated file): read the tail once for today's tokens
+    // and the current posture, then continue from the new end.
+    const start = Math.max(0, stat.size - CLAUDE_BACKFILL_BYTES);
+    let chunk = readRange(file, start, stat.size - start);
+    if (start > 0) chunk = dropFirstLine(chunk);
+    entry.offset = stat.size;
+    applyClaudeChunk(entry, chunk, now);
+  } else {
+    let start = entry.offset;
+    let length = stat.size - start;
+    if (length > CLAUDE_READ_BYTES) {
+      start = stat.size - CLAUDE_READ_BYTES;
+      length = CLAUDE_READ_BYTES;
+      if (!entry.warned) {
+        entry.warned = true;
+        console.error(new Date().toISOString(), 'claude', path.basename(file), 'fell behind; skipping to the newest chunk');
+      }
+    }
+    let chunk = readRange(file, start, length);
+    if (start > entry.offset) chunk = dropFirstLine(chunk);
+    entry.offset = stat.size;
+    applyClaudeChunk(entry, chunk, now);
+  }
+  return entry;
+}
+
+function claudeReports() {
+  const now = Date.now();
+  const reports = [];
+  const seen = new Set();
+  let projects;
+  try {
+    projects = fs.readdirSync(CLAUDE_PROJECTS, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+  for (const project of projects) {
+    if (!project.isDirectory()) continue;
+    const dir = path.join(CLAUDE_PROJECTS, project.name);
+    let files;
+    try {
+      files = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const file of files) {
+      if (!file.isFile() || !file.name.endsWith('.jsonl')) continue;
+      const full = path.join(dir, file.name);
+      let stat;
+      try {
+        stat = fs.statSync(full);
+      } catch {
+        continue;
+      }
+      if (!stat.isFile() || stat.size === 0) continue;
+      // A meaningful record cannot be newer than the file's mtime, so an old
+      // mtime means no report can pass the active window. Skip before the
+      // first-sight backfill, or a large history would stall the tick.
+      if (now - stat.mtimeMs > CLAUDE_ACTIVE_MS) {
+        claudeFiles.delete(full);
+        continue;
+      }
+      seen.add(full);
+      let entry;
+      try {
+        entry = syncClaudeFile(full, now);
+      } catch (error) {
+        console.error(new Date().toISOString(), 'claude', file.name.slice(0, 8), 'error:', error.message);
+        continue;
+      }
+      if (!entry) continue;
+      const report = claudeReport(entry.state, now, entry.startedAt, project.name);
+      if (report) reports.push(report);
+    }
+  }
+  for (const file of claudeFiles.keys()) {
+    if (!seen.has(file)) claudeFiles.delete(file);
+  }
+  return reports
+    .sort((a, b) => (b.lastActivity || 0) - (a.lastActivity || 0))
+    .slice(0, 3);
+}
+
 // MARK: main
 
 function tick() {
@@ -545,7 +685,8 @@ function tick() {
     { group: 'codex', name: 'Codex', bundleID: 'com.openai.codex', reports: codexReports },
     { group: 'workbuddy', name: 'WorkBuddy', bundleID: 'com.tencent.workbuddy.mac', reports: workbuddyReports },
     { group: 'grok', name: 'Grok Bot', bundleID: 'com.anysphere.sand', reports: grokReports },
-    { group: 'hermes', name: 'Hermes', bundleID: null, reports: hermesReports }
+    { group: 'hermes', name: 'Hermes', bundleID: null, reports: hermesReports },
+    { group: 'claude', name: 'Claude Code', bundleID: null, reports: claudeReports }
   ];
   const all = [];
   for (const adapter of adapters) {

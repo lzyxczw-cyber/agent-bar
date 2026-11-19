@@ -147,13 +147,13 @@ v0.3.6 已打 tag。已经发布的 v0.3.6 DMG 是 bundled-bridge 改动之前�
 ### 一键接入（Claude Code / Codex）
 
 ```bash
-node tools/agentbar-install-adapter.mjs claude   # 合并 PreToolUse/Stop hooks
 node tools/agentbar-install-adapter.mjs codex    # 生成 codex-agentbar wrapper
+node tools/agentbar-install-adapter.mjs claude   # 只打印说明：Claude Code 无需安装
 node tools/agentbar-install-adapter.mjs status  # 查看安装状态
-node tools/agentbar-install-adapter.mjs uninstall-claude
+node tools/agentbar-install-adapter.mjs uninstall-claude  # 清理旧版安装的 hooks
 ```
 
-- Claude Code：备份 `~/.claude/settings.json` 后合并 hooks，不覆盖已有 hooks；重启 Claude Code 生效。
+- Claude Code：无需安装。状态条直接读取 `~/.claude/projects/<项目>/<会话>.jsonl`，显示项目、分支、当前工具、最新思考和今日 token（按 `message.id` 去重，不含缓存读取）。旧版装过 hooks 的，执行一次 `uninstall-claude` 清掉，避免同一个会话出现两行。
 - Codex：生成 `~/Library/Application Support/AgentBar/adapters/codex-agentbar`，按输出提示加 alias。
   升级前装过旧 wrapper 的，再执行一次本命令即可换成独立的 `codex-cli` 报告 id，避免和桌面 adapter 抢同一个 `agents/codex.json`。
 - 两者都只是状态上报。审批仍在各自的工具里处理：面板不会为它们显示「允许」。
@@ -172,11 +172,11 @@ node tools/agentbar-report.mjs --id codex --status done
 node tools/agentbar-report.mjs --id codex --remove
 ```
 
-bridge 每 tick 扫描一次；120s 无心跳隐藏，文件删除即移除。完整 schema、Codex wrapper 和 Claude Code hooks 示例见 [bridge/README.md](bridge/README.md) §11。
+bridge 每 tick 扫描一次；120s 无心跳隐藏，文件删除即移除。完整 schema、Codex wrapper 和 Claude transcript adapter 的说明见 [bridge/README.md](bridge/README.md) §11。
 
-### 本机桌面 App adapter（Codex / Grok Bot / WorkBuddy / Hermes）
+### 本机桌面 App adapter（Claude Code / Codex / Grok Bot / WorkBuddy / Hermes）
 
-打开打包好的 App，或走 `start.sh`，都会自动启动 `tools/agentbar-app-adapters.mjs`。脚本和它相对导入的 `tools/lib/adapter-logic.mjs` 一起打在 App 的 `Resources/tools/` 里，只读取本机 App 的本地状态，不修改 App。已发布的 `Agent-Bar-0.3.7.dmg` 和 `Agent-Bar-0.3.8.dmg` 漏了后者，watcher 以 `ERR_MODULE_NOT_FOUND` 立刻退出，Codex / WorkBuddy / Grok Bot / Hermes 不会出现。已发布的 `Agent-Bar-0.3.9.dmg` 带上了 `tools/lib/adapter-logic.mjs`。DSH bridge 不走这个脚本，同样随这个 App 启动：程序在 `Resources/bridge/`，运行副本在 Application Support。
+打开打包好的 App，或走 `start.sh`，都会自动启动 `tools/agentbar-app-adapters.mjs`。脚本和它相对导入的 `tools/lib/adapter-logic.mjs` 一起打在 App 的 `Resources/tools/` 里，只读取本机 App 的本地状态，不修改 App。Claude Code 的会话文件同样由这个 watcher 读取，不需要安装 hook。已发布的 `Agent-Bar-0.3.7.dmg` 和 `Agent-Bar-0.3.8.dmg` 漏了后者，watcher 以 `ERR_MODULE_NOT_FOUND` 立刻退出，Codex / WorkBuddy / Grok Bot / Hermes 不会出现。已发布的 `Agent-Bar-0.3.9.dmg` 带上了 `tools/lib/adapter-logic.mjs`。DSH bridge 不走这个脚本，同样随这个 App 启动：程序在 `Resources/bridge/`，运行副本在 Application Support。
 
 **同一 App 只占一个图标/一个父行**，最多 3 个活跃会话收进 `sessions` 数组；选中父行后在面板里展开子会话。父行右侧的 ↗ 按钮、或在栏上双击该 App 的图标，会切到对应 App。设置 → Adapter 控制 可打开 adapter 日志或重启 watcher。
 
@@ -202,7 +202,7 @@ App 退出后 adapter 会自动移除对应图标。
 |---|---|---|---|
 | **DeepSeek Harness（DSH）** | ✅ 原生 bridge（非官方） | ✅ | ✅ 审批双向；可校验的提问可在面板回答 |
 | **Codex**（ChatGPT.app / CLI） | ✅ 桌面 App adapter（本地 SQLite）；CLI 另有 wrapper | ✅ 命令 / 文件 / reasoning | ❌ 只读。审批协议是当前 `codex app-server` 连接上的 `item/commandExecution/requestApproval`，Agent Bar 不是那条连接 |
-| **Claude Code** | ✅ hooks 一键安装 | ⚠️ 可上报 | ❌ 只读。允许/拒绝只能由当次 `PreToolUse` hook 输出；现有 hook 只上报状态，不阻塞、不另发 prompt |
+| **Claude Code** | ✅ 自动读取本地会话（无需安装） | ✅ 工具 / 思考 | ❌ 只读。允许/拒绝只能由当次 `PreToolUse` hook 输出；状态条读取的是 transcript，不阻塞、不另发 prompt |
 | **WorkBuddy** | ✅ 本机 trace adapter | ✅ 当前 span（无自然语言 thought） | ❌ 只读。trace 不是带 token 和 pending id 的控制接口 |
 | **Grok Bot** | ✅ 本机 persistence adapter | ⚠️ 最近对话，无 reasoning 细分 | ❌ 只读。本地 blob 不是控制通道 |
 | **Hermes** | ✅ 本机 `state.db`（进程在跑且库可读时）；否则仍是演示 | ⚠️ 最近一条消息，推断状态 | ❌ 只读。`state.db` 没有审批回调 |

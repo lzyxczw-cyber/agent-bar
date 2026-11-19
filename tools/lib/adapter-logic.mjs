@@ -2,6 +2,7 @@
  * Pure helpers for desktop-app adapters.
  * Status is inferred from local files. There is no official API.
  */
+import path from 'node:path';
 
 export const HERMES_RUNNING_MS = 90 * 1000;
 export const RECENT_ROUND_MS = 3 * 60 * 1000;
@@ -215,7 +216,7 @@ export function standbyParentStatus (raw) {
 export function aggregateApp (adapter, reports) {
   const active = (reports || [])
     .filter ((report) => report && report.status === 'running' && report.id !== adapter.group)
-    .sort ((a, b) => (b.startedAt || 0) - (a.startedAt || 0));
+    .sort ((a, b) => ((b.lastActivity || b.startedAt || 0) - (a.lastActivity || a.startedAt || 0)));
   const idle = (reports || []).find ((report) => report && report.id === adapter.group) || (reports || [])[0] || null;
   if (active.length === 0) {
     if (!idle) return null;
@@ -260,5 +261,251 @@ export function aggregateApp (adapter, reports) {
     appBundleID: adapter.bundleID || null,
     sessions,
     process: latest.process || []
+  };
+}
+
+// MARK: Claude transcripts
+
+export const CLAUDE_ACTIVE_MS = 15 * 60 * 1000;
+export const CLAUDE_BACKFILL_BYTES = 16 * 1024 * 1024;
+export const CLAUDE_READ_BYTES = 256 * 1024;
+
+/** Local-time YYYY-MM-DD, used to keep today's tokens separate. */
+export function claudeTodayKey (now) {
+  const date = new Date (Number (now));
+  if (!Number.isFinite (date.getTime ())) return '';
+  const month = String (date.getMonth () + 1).padStart (2, '0');
+  const day = String (date.getDate ()).padStart (2, '0');
+  return date.getFullYear () + '-' + month + '-' + day;
+}
+
+function claudeCompact (value, limit) {
+  if (value === null || value === undefined) return null;
+  const text = String (value).replace (/\s+/g, ' ').trim ();
+  if (!text) return null;
+  return text.length > limit ? text.slice (0, limit) + '…' : text;
+}
+
+function claudeTimestamp (value) {
+  if (typeof value === 'number' && Number.isFinite (value)) return Math.round (value);
+  if (typeof value !== 'string' || value === '') return null;
+  const parsed = Date.parse (value);
+  return Number.isFinite (parsed) ? parsed : null;
+}
+
+function claudeTokenCount (usage) {
+  if (!usage || typeof usage !== 'object') return 0;
+  const sum = ['input_tokens', 'output_tokens', 'cache_creation_input_tokens']
+    .reduce ((total, key) => total + (Number (usage[key]) || 0), 0);
+  return sum > 0 ? sum : 0;
+}
+
+function claudeFirstLine (value) {
+  if (typeof value !== 'string') return null;
+  return value.split (/\r?\n/)[0].trim () || null;
+}
+
+/** `Bash: npm test`, `Edit: Views.swift`, `Grep: TODO`, … */
+export function claudeToolSummary (toolUse) {
+  if (!toolUse || typeof toolUse !== 'object') return null;
+  const name = typeof toolUse.name === 'string' ? toolUse.name.trim () : '';
+  const input = toolUse.input && typeof toolUse.input === 'object' ? toolUse.input : {};
+  let target = null;
+  if (name === 'Bash') {
+    target = claudeFirstLine (input.command);
+  } else if (name === 'Edit' || name === 'Write' || name === 'Read' || name === 'NotebookEdit') {
+    target = typeof input.file_path === 'string' ? path.basename (input.file_path) : null;
+  } else if (name === 'Grep' || name === 'Glob') {
+    target = typeof input.pattern === 'string' ? input.pattern : null;
+  } else if (name === 'Task') {
+    target = typeof input.description === 'string' ? input.description : null;
+  }
+  if (!name) return claudeCompact (target, 160);
+  if (target === null || target === '') return name;
+  return claudeCompact (name + ': ' + target, 160);
+}
+
+function claudeIsUserPrompt (text) {
+  const trimmed = text.trim ();
+  if (!trimmed) return false;
+  return !/^<(command-|local-command-|system-reminder)/.test (trimmed);
+}
+
+/**
+ * One JSONL record -> a normalized update, or null for metadata.
+ * Continued sessions are surfaced so the caller can hide the old file.
+ */
+export function claudeRecordUpdate (record) {
+  if (!record || typeof record !== 'object') return null;
+  const ts = claudeTimestamp (record.timestamp);
+  const sessionId = typeof record.sessionId === 'string' ? record.sessionId : null;
+
+  if (record.type === 'continued-in') {
+    return {
+      kind: 'continued',
+      ts,
+      sessionId,
+      successorId: typeof record.continuedInSessionId === 'string' ? record.continuedInSessionId : null
+    };
+  }
+  if (ts === null) return null;
+
+  if (record.type === 'assistant') {
+    const message = record.message && typeof record.message === 'object' ? record.message : {};
+    const content = message.content;
+    let thinking = null;
+    let text = null;
+    let toolUse = null;
+    if (typeof content === 'string') {
+      text = content;
+    } else if (Array.isArray (content)) {
+      for (const block of content) {
+        if (!block || typeof block !== 'object') continue;
+        if (block.type === 'thinking' && typeof block.thinking === 'string') thinking = block.thinking;
+        else if (block.type === 'text' && typeof block.text === 'string') text = block.text;
+        else if (block.type === 'tool_use' && typeof block.name === 'string') {
+          toolUse = { name: block.name, input: block.input && typeof block.input === 'object' ? block.input : {} };
+        }
+      }
+    }
+    return {
+      kind: 'assistant',
+      ts,
+      sessionId,
+      messageId: typeof message.id === 'string' ? message.id : null,
+      model: typeof message.model === 'string' ? message.model : null,
+      cwd: typeof record.cwd === 'string' ? record.cwd : null,
+      branch: typeof record.gitBranch === 'string' ? record.gitBranch : null,
+      stopReason: typeof message.stop_reason === 'string' ? message.stop_reason : null,
+      thinking,
+      text,
+      toolUse,
+      tokens: claudeTokenCount (message.usage)
+    };
+  }
+
+  if (record.type === 'user') {
+    if (record.isMeta === true) return null;
+    const content = record.message && typeof record.message === 'object' ? record.message.content : null;
+    let toolResult = false;
+    let text = '';
+    if (typeof content === 'string') {
+      text = content;
+    } else if (Array.isArray (content)) {
+      for (const block of content) {
+        if (!block || typeof block !== 'object') continue;
+        if (block.type === 'tool_result') toolResult = true;
+        else if (block.type === 'text' && typeof block.text === 'string') text += block.text + '\n';
+      }
+    }
+    const prompt = !toolResult && claudeIsUserPrompt (text);
+    if (!toolResult && !prompt) return null;
+    return {
+      kind: 'user',
+      ts,
+      sessionId,
+      cwd: typeof record.cwd === 'string' ? record.cwd : null,
+      branch: typeof record.gitBranch === 'string' ? record.gitBranch : null,
+      toolResult,
+      prompt
+    };
+  }
+
+  return null;
+}
+
+export function createClaudeState () {
+  return {
+    sessionId: null,
+    cwd: null,
+    branch: null,
+    model: null,
+    lastActivity: null,
+    thinking: null,
+    text: null,
+    tool: null,
+    pendingTool: null,
+    status: 'idle',
+    dayKey: '',
+    messages: {},
+    continued: false
+  };
+}
+
+/** Fold one update into the session state. Returns a new object. */
+export function mergeClaudeState (state, update, now) {
+  if (!update || typeof update !== 'object') return state;
+  const dayKey = claudeTodayKey (now);
+  const next = {
+    ...state,
+    dayKey,
+    messages: state.dayKey === dayKey ? state.messages : {}
+  };
+  if (Number.isFinite (update.ts)) {
+    next.lastActivity = Math.max (state.lastActivity || 0, update.ts);
+  }
+  if (update.sessionId) next.sessionId = update.sessionId;
+
+  if (update.kind === 'continued') {
+    next.continued = true;
+    return next;
+  }
+
+  if (update.kind === 'assistant') {
+    if (update.cwd) next.cwd = update.cwd;
+    if (update.branch) next.branch = update.branch;
+    if (update.model) next.model = update.model;
+    if (update.thinking) next.thinking = update.thinking;
+    if (update.text) next.text = update.text;
+    if (update.toolUse) {
+      next.pendingTool = update.toolUse;
+      next.tool = claudeToolSummary (update.toolUse) || next.tool;
+      next.status = 'running';
+    } else if (update.stopReason === 'end_turn') {
+      next.pendingTool = null;
+      next.status = 'done';
+    } else {
+      next.status = 'running';
+    }
+    const messageId = update.messageId;
+    if (messageId && Number.isFinite (update.ts) && claudeTodayKey (update.ts) === dayKey) {
+      next.messages = { ...next.messages, [messageId]: update.tokens || 0 };
+    }
+    return next;
+  }
+
+  if (update.kind === 'user' && (update.toolResult || update.prompt)) {
+    if (update.cwd) next.cwd = update.cwd;
+    if (update.branch) next.branch = update.branch;
+    next.pendingTool = null;
+    next.status = 'running';
+  }
+  return next;
+}
+
+/** State -> external-agent report, or null when hidden. */
+export function claudeReport (state, now, startedAt, fallbackProject = null) {
+  if (!state || state.continued) return null;
+  if (!state.sessionId || !Number.isFinite (state.lastActivity)) return null;
+  if (now - state.lastActivity > CLAUDE_ACTIVE_MS) return null;
+  const today = claudeTodayKey (now);
+  const tokens = state.dayKey === today
+    ? Object.values (state.messages).reduce ((sum, value) => sum + (Number (value) || 0), 0)
+    : 0;
+  const project = (state.cwd ? path.basename (state.cwd) : '') ||
+    fallbackProject ||
+    state.sessionId.slice (0, 8);
+  const done = state.status === 'done';
+  return {
+    id: 'claude-' + state.sessionId.slice (0, 8),
+    name: 'Claude Code',
+    status: done ? 'done' : 'running',
+    project,
+    tool: state.tool || (done ? '空闲' : '运行中'),
+    detail: state.branch ? 'branch: ' + state.branch : null,
+    thought: claudeCompact (state.thinking || state.text, 600),
+    tokens,
+    startedAt,
+    lastActivity: state.lastActivity
   };
 }

@@ -28,12 +28,6 @@ function shellQuote(value) {
   return "'" + String(value).replace(/'/g, "'\\''") + "'";
 }
 
-function hookCommand(id, extra = '') {
-  const parts = [shellQuote(process.execPath), shellQuote(REPORT), '--id', shellQuote(id)];
-  if (extra) parts.push(extra);
-  return parts.join(' ');
-}
-
 function backupFile(file) {
   if (!fs.existsSync(file)) return null;
   const backup = file + '.agentbar-backup-' + Date.now();
@@ -78,34 +72,9 @@ function removeOurHooks(node) {
 }
 
 function installClaude() {
-  fs.mkdirSync(path.dirname(CLAUDE_SETTINGS), { recursive: true, mode: 0o700 });
-  const existing = fs.existsSync(CLAUDE_SETTINGS) ? readJSON(CLAUDE_SETTINGS, null) : {};
-  if (existing === null || !existing || typeof existing !== 'object' || Array.isArray(existing)) {
-    throw new Error(CLAUDE_SETTINGS + ' is not a JSON object; refusing to overwrite');
-  }
-  const node = removeOurHooks(existing).node;
-  const backup = backupFile(CLAUDE_SETTINGS);
-  const hooks = node.hooks && typeof node.hooks === 'object' ? node.hooks : {};
-  hooks.PreToolUse = Array.isArray(hooks.PreToolUse) ? hooks.PreToolUse : [];
-  hooks.PreToolUse.push({
-    matcher: '*',
-    // Every tool call spawns Node for a few dozen milliseconds; keep a short
-    // timeout so a missing node binary or a stuck write cannot stall a turn.
-    hooks: [{ type: 'command', timeout: 5, command: hookCommand('claude-code', "--name 'Claude Code' --status running --tool 'Claude Code' --project \"$(basename \"$PWD\")\"") }]
-  });
-  hooks.Stop = Array.isArray(hooks.Stop) ? hooks.Stop : [];
-  hooks.Stop.push({
-    hooks: [{ type: 'command', timeout: 5, command: hookCommand('claude-code', '--status done') }]
-  });
-  node.hooks = hooks;
-  fs.mkdirSync(path.dirname(CLAUDE_SETTINGS), { recursive: true, mode: 0o700 });
-  fs.writeFileSync(CLAUDE_SETTINGS, JSON.stringify(node, null, 2) + '\n', { mode: 0o600 });
-  fs.chmodSync(CLAUDE_SETTINGS, 0o600);
-  console.log('Claude Code adapter installed');
-  console.log('  hooks:  ' + CLAUDE_SETTINGS);
-  if (backup) console.log('  backup: ' + backup);
-  console.log('  report: ' + REPORT);
-  console.log('  restart Claude Code (or start a new session) to load the hooks.');
+  const projects = path.join(process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude'), 'projects');
+  console.log('Claude Code sessions are read directly from local transcripts under ' + projects + '; no hooks are needed.');
+  console.log('If an older version installed hooks, run: node tools/agentbar-install-adapter.mjs uninstall-claude');
 }
 
 function uninstallClaude() {
