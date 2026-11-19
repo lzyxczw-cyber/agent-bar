@@ -2325,7 +2325,8 @@ struct PanelView: View {
     }
 
     private func commandApprovalCard(_ agent: Agent) -> some View {
-        VStack(alignment: .leading, spacing: 9) {
+        let canAnswerClaude = claudeApprovalCanAnswer(agent.approvalId)
+        return VStack(alignment: .leading, spacing: 9) {
             HStack(spacing: 6) {
                 Image(systemName: "hand.raised.fill")
                     .font(.system(size: 10, weight: .bold))
@@ -2345,10 +2346,12 @@ struct PanelView: View {
                 .padding(9)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.black.opacity(0.35)))
-                .lineLimit(2)
+                .lineLimit(6)
+                .textSelection(.enabled)
+                .help(agent.approvalCommand ?? "")
 
             HStack(spacing: 8) {
-                if store.feedMode == .offline {
+                if store.feedMode == .offline && !canAnswerClaude {
                     // isLive stays true after the first successful feed, so
                     // gate on the feed mode: a dead bridge would accept the
                     // hold but never process the request file.
@@ -2357,10 +2360,10 @@ struct PanelView: View {
                         .foregroundStyle(Color(red: 1.0, green: 0.80, blue: 0.38).opacity(0.9))
                         .fixedSize(horizontal: false, vertical: true)
                     Spacer()
-                } else if store.isLive {
+                } else if store.isLive || canAnswerClaude {
                     VStack(alignment: .leading, spacing: 8) {
                         HStack(spacing: 8) {
-                            if agent.isExternal {
+                            if agent.isExternal, !canAnswerClaude {
                                 Text(externalApprovalReadOnlyReason(agentName: agent.name))
                                     .font(.system(size: 10.5, weight: .medium))
                                     .foregroundStyle(Color.white.opacity(0.62))
@@ -2395,7 +2398,7 @@ struct PanelView: View {
                                     .foregroundStyle(Color(red: 1.0, green: 0.80, blue: 0.38).opacity(0.9))
                             }
                             Spacer()
-                            Text(agent.isExternal ? "只读 · 没有可代答的控制通道" : (store.approvalNotice ?? "长按 0.4 秒确认 · 危险命令二次确认"))
+                            Text(canAnswerClaude ? (store.approvalNotice ?? "长按 0.4 秒确认 · 危险命令二次确认") : (agent.isExternal ? "只读 · 没有可代答的控制通道" : (store.approvalNotice ?? "长按 0.4 秒确认 · 危险命令二次确认")))
                                 .font(.system(size: 9.5))
                                 .foregroundStyle(Color.white.opacity(0.32))
                                 .lineLimit(1)
@@ -2425,7 +2428,7 @@ struct PanelView: View {
                             }
                             .buttonStyle(.plain)
                             Spacer()
-                            Text(agent.isExternal ? "不会发送允许或拒绝" : "审计：bridge/audit.log")
+                            Text(agent.isExternal ? (canAnswerClaude ? "审计：claude-approvals/audit.log" : "不会发送允许或拒绝") : "审计：bridge/audit.log")
                                 .font(.system(size: 9))
                                 .foregroundStyle(Color.white.opacity(0.22))
                         }

@@ -255,6 +255,7 @@ final class DemoStore: ObservableObject {
     @Published var balanceText: String? = "¥89.94"
     @Published var dshURL: String? = "http://127.0.0.1:49469"
     @Published var controlDirectory: URL?
+    @Published var claudeApprovalDirectory: URL?
     @Published var approvalNotice: String?
     @Published var feedMode: BarFeedMode = .demo
     @Published var protocolNote: String?
@@ -449,6 +450,9 @@ final class DemoStore: ObservableObject {
         answers: [[String: Any]]?,
         notice: String
     ) -> Bool {
+        if let requestId = claudeApprovalRequestId(approvalId) {
+            return submitClaudeApproval(requestId: requestId, decision: decision, notice: notice)
+        }
         guard let dir = controlDirectory else { return false }
         let tokenURL = dir.appendingPathComponent("token")
         guard let token = try? String(contentsOf: tokenURL, encoding: .utf8)
@@ -486,6 +490,69 @@ final class DemoStore: ObservableObject {
             approvalNotice = "发送失败：\(error.localizedDescription)"
             return false
         }
+    }
+
+    private func submitClaudeApproval(requestId: String, decision: String, notice: String) -> Bool {
+        guard let dir = claudeApprovalDirectory else {
+            approvalNotice = "审批目录未就绪"
+            return false
+        }
+        let pending = dir.appendingPathComponent("pending/\(requestId).json")
+        guard let data = try? Data(contentsOf: pending),
+              let approval = parseClaudePendingApproval(data) else {
+            approvalNotice = "审批已过期（hook 已超时）"
+            return false
+        }
+        guard let mapped = claudeApprovalDecision(decision),
+              let payload = claudeApprovalDecisionJSON(approval, decision: mapped, at: Date()) else {
+            approvalNotice = "不支持的审批决定"
+            return false
+        }
+        let decisions = dir.appendingPathComponent("decisions", isDirectory: true)
+        do {
+            try FileManager.default.createDirectory(
+                at: decisions,
+                withIntermediateDirectories: true,
+                attributes: [.posixPermissions: 0o700]
+            )
+            let final = decisions.appendingPathComponent("\(requestId).json")
+            try payload.write(to: final, options: .atomic)
+            try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: final.path)
+            appendClaudeAudit(approval, decision: mapped)
+            approvalNotice = notice
+            return true
+        } catch {
+            approvalNotice = "发送失败：\(error.localizedDescription)"
+            return false
+        }
+    }
+
+    private func appendClaudeAudit(_ approval: ClaudePendingApproval, decision: String) {
+        guard let dir = claudeApprovalDirectory else { return }
+        let row: [String: Any] = [
+            "at": Int(Date().timeIntervalSince1970 * 1000),
+            "id": approval.id,
+            "sessionId": approval.sessionId,
+            "tool": approval.tool,
+            "command": approval.command,
+            "decision": decision,
+            "source": "panel"
+        ]
+        guard let data = try? JSONSerialization.data(withJSONObject: row, options: [.sortedKeys]) else { return }
+        try? FileManager.default.createDirectory(
+            at: dir,
+            withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700]
+        )
+        let url = dir.appendingPathComponent("audit.log")
+        if !FileManager.default.fileExists(atPath: url.path) {
+            FileManager.default.createFile(atPath: url.path, contents: nil, attributes: [.posixPermissions: 0o600])
+        }
+        guard let handle = try? FileHandle(forWritingTo: url) else { return }
+        defer { try? handle.close() }
+        _ = try? handle.seekToEnd()
+        handle.write(data)
+        handle.write(Data([0x0A]))
     }
 
     func applyLiveFeed(_ newAgents: [Agent], total: Int) {

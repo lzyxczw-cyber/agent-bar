@@ -73,6 +73,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         startAgentRotation()
 
         syncBundledBridgeToAppSupport()
+        store.claudeApprovalDirectory = appSupportClaudeApprovalDir()
         feedURL = resolveFeedURL()
         if let feedURL = feedURL {
             dlog("[agentbar] live feed path: \(feedURL.path)")
@@ -417,6 +418,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         return base.appendingPathComponent("AgentBar/bridge", isDirectory: true)
     }
 
+    private func appSupportClaudeApprovalDir() -> URL? {
+        guard let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else { return nil }
+        return base.appendingPathComponent("AgentBar/claude-approvals", isDirectory: true)
+    }
+
     private func resolveFeedURL() -> URL? {
         let args = CommandLine.arguments
         if let idx = args.firstIndex(of: "--feed"), idx + 1 < args.count {
@@ -446,6 +452,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private func startFeedPolling() {
         let timer = Timer(timeInterval: 1.0, repeats: true) { [weak self] _ in
             self?.loadLiveFeed()
+            // Approvals are read from local files, so they must survive the
+            // feed replacing store.agents and keep working without the bridge.
+            self?.syncClaudeApprovals()
         }
         RunLoop.main.add(timer, forMode: .common)
         feedTimer = timer
@@ -524,6 +533,109 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 store.markBridgeOffline("bridge 未连接")
             } else {
                 store.markBridgeOffline("暂无活跃任务")
+            }
+        }
+    }
+
+    // MARK: Claude approval handshake (PermissionRequest hook)
+
+    private func syncClaudeApprovals() {
+        guard let dir = store.claudeApprovalDirectory else { return }
+        let fm = FileManager.default
+        let pendingDir = dir.appendingPathComponent("pending", isDirectory: true)
+        let decisionsDir = dir.appendingPathComponent("decisions", isDirectory: true)
+        let now = Date()
+
+        touchClaudeHeartbeat(dir: dir)
+        pruneClaudeFiles(pendingDir, olderThan: 120, now: now)
+        pruneClaudeFiles(decisionsDir, olderThan: 600, now: now)
+
+        let loaded: [ClaudePendingApproval] = (try? fm.contentsOfDirectory(at: pendingDir, includingPropertiesForKeys: nil))?
+            .compactMap { url in
+                guard url.pathExtension == "json",
+                      let data = try? Data(contentsOf: url),
+                      let approval = parseClaudePendingApproval(data) else { return nil }
+                let age = now.timeIntervalSince1970 - approval.createdAt / 1000.0
+                return age < 120 ? approval : nil
+            } ?? []
+
+        if let picked = selectClaudePendingApproval(loaded) {
+            applyClaudeApproval(picked.approval, extra: picked.extra)
+        } else {
+            clearClaudeApproval()
+        }
+    }
+
+    private func touchClaudeHeartbeat(dir: URL) {
+        let fm = FileManager.default
+        try? fm.createDirectory(at: dir, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        let url = dir.appendingPathComponent("heartbeat")
+        if fm.fileExists(atPath: url.path) {
+            try? fm.setAttributes([.modificationDate: Date()], ofItemAtPath: url.path)
+        } else {
+            fm.createFile(atPath: url.path, contents: Data(), attributes: [.posixPermissions: 0o600])
+        }
+    }
+
+    private func pruneClaudeFiles(_ dir: URL, olderThan seconds: TimeInterval, now: Date) {
+        let fm = FileManager.default
+        guard let urls = try? fm.contentsOfDirectory(
+            at: dir,
+            includingPropertiesForKeys: [.contentModificationDateKey]
+        ) else { return }
+        for url in urls {
+            let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? now
+            if now.timeIntervalSince(modified) > seconds {
+                try? fm.removeItem(at: url)
+            }
+        }
+    }
+
+    private func applyClaudeApproval(_ approval: ClaudePendingApproval, extra: Int) {
+        let project = (approval.cwd as NSString).lastPathComponent
+        let displayProject = project.isEmpty ? "Claude Code" : project
+        let note = claudeApprovalNotice(project: displayProject, extra: extra)
+        let approvalId = claudeApprovalId(approval.id)
+
+        if let index = store.agents.firstIndex(where: { $0.id == "claude" }) {
+            store.agents[index].status = .waiting
+            store.agents[index].approvalId = approvalId
+            store.agents[index].approvalCommand = approval.command
+            store.agents[index].note = note
+            return
+        }
+        if let index = store.agents.firstIndex(where: { $0.id == "claude-approval" }) {
+            store.agents[index].project = displayProject
+            store.agents[index].approvalId = approvalId
+            store.agents[index].approvalCommand = approval.command
+            store.agents[index].note = note
+            return
+        }
+        store.agents.append(Agent(
+            id: "claude-approval",
+            name: "Claude Code",
+            project: displayProject,
+            tool: "Bash",
+            status: .waiting,
+            startedAt: Date(),
+            approvalCommand: approval.command,
+            approvalId: approvalId,
+            note: note,
+            isExternal: true
+        ))
+    }
+
+    private func clearClaudeApproval() {
+        if let index = store.agents.firstIndex(where: { $0.id == "claude-approval" }) {
+            store.agents.remove(at: index)
+        }
+        if let index = store.agents.firstIndex(where: { $0.id == "claude" }),
+           claudeApprovalCanAnswer(store.agents[index].approvalId) {
+            store.agents[index].approvalId = nil
+            store.agents[index].approvalCommand = nil
+            store.agents[index].note = nil
+            if store.agents[index].status == .waiting {
+                store.agents[index].status = .running
             }
         }
     }
