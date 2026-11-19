@@ -400,7 +400,15 @@ export function claudeRecordUpdate (record) {
     }
     const prompt = !toolResult && claudeIsUserPrompt (text);
     if (!toolResult && !prompt) return null;
-    return { kind: 'user', ts, sessionId, toolResult, prompt };
+    return {
+      kind: 'user',
+      ts,
+      sessionId,
+      cwd: typeof record.cwd === 'string' ? record.cwd : null,
+      branch: typeof record.gitBranch === 'string' ? record.gitBranch : null,
+      toolResult,
+      prompt
+    };
   }
 
   return null;
@@ -467,6 +475,8 @@ export function mergeClaudeState (state, update, now) {
   }
 
   if (update.kind === 'user' && (update.toolResult || update.prompt)) {
+    if (update.cwd) next.cwd = update.cwd;
+    if (update.branch) next.branch = update.branch;
     next.pendingTool = null;
     next.status = 'running';
   }
@@ -474,7 +484,7 @@ export function mergeClaudeState (state, update, now) {
 }
 
 /** State -> external-agent report, or null when hidden. */
-export function claudeReport (state, now, startedAt) {
+export function claudeReport (state, now, startedAt, fallbackProject = null) {
   if (!state || state.continued) return null;
   if (!state.sessionId || !Number.isFinite (state.lastActivity)) return null;
   if (now - state.lastActivity > CLAUDE_ACTIVE_MS) return null;
@@ -482,7 +492,9 @@ export function claudeReport (state, now, startedAt) {
   const tokens = state.dayKey === today
     ? Object.values (state.messages).reduce ((sum, value) => sum + (Number (value) || 0), 0)
     : 0;
-  const project = (state.cwd ? path.basename (state.cwd) : '') || state.sessionId.slice (0, 8);
+  const project = (state.cwd ? path.basename (state.cwd) : '') ||
+    fallbackProject ||
+    state.sessionId.slice (0, 8);
   const done = state.status === 'done';
   return {
     id: 'claude-' + state.sessionId.slice (0, 8),

@@ -21,6 +21,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import {
   aggregateApp,
+  CLAUDE_ACTIVE_MS,
   CLAUDE_BACKFILL_BYTES,
   CLAUDE_READ_BYTES,
   claudeRecordUpdate,
@@ -592,6 +593,7 @@ function syncClaudeFile(file, now) {
     entry.partial = '';
     entry.startedAt = now;
   }
+  if (entry.offset === stat.size) return entry;
   if (entry.offset === 0) {
     // First sight (or a truncated file): read the tail once for today's tokens
     // and the current posture, then continue from the new end.
@@ -641,6 +643,20 @@ function claudeReports() {
     for (const file of files) {
       if (!file.isFile() || !file.name.endsWith('.jsonl')) continue;
       const full = path.join(dir, file.name);
+      let stat;
+      try {
+        stat = fs.statSync(full);
+      } catch {
+        continue;
+      }
+      if (!stat.isFile() || stat.size === 0) continue;
+      // A meaningful record cannot be newer than the file's mtime, so an old
+      // mtime means no report can pass the active window. Skip before the
+      // first-sight backfill, or a large history would stall the tick.
+      if (now - stat.mtimeMs > CLAUDE_ACTIVE_MS) {
+        claudeFiles.delete(full);
+        continue;
+      }
       seen.add(full);
       let entry;
       try {
@@ -650,7 +666,7 @@ function claudeReports() {
         continue;
       }
       if (!entry) continue;
-      const report = claudeReport(entry.state, now, entry.startedAt);
+      const report = claudeReport(entry.state, now, entry.startedAt, project.name);
       if (report) reports.push(report);
     }
   }

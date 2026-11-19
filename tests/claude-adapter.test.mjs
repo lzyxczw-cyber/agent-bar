@@ -73,3 +73,16 @@ test('partial trailing line and missing directory do not break the watcher', () 
   const output = runOnce(empty);
   assert.equal(output.some((report) => report.id === 'claude'), false);
 });
+
+test('transcripts untouched for the active window are not reported', () => {
+  const home = fixtureHome();
+  const file = writeSession(home, '-work-old', 'old', [{
+    type: 'assistant', sessionId: 'old', cwd: '/work/old', timestamp: new Date().toISOString(),
+    message: { id: 'm-old', model: 'claude-x', stop_reason: 'tool_use', usage: { output_tokens: 1 },
+      content: [{ type: 'tool_use', name: 'Bash', input: { command: 'sleep 1' } }] }
+  }]);
+  const old = new Date(Date.now() - 20 * 60 * 1000);
+  fs.utimesSync(file, old, old);
+  const output = runOnce(home);
+  assert.equal(output.some((report) => report.id === 'claude'), false);
+});

@@ -323,3 +323,22 @@ test('aggregateApp prefers lastActivity for the parent summary', () => {
   assert.equal(parent.tool, 'new');
   assert.equal(parent.sessions[0].id, 'claude-new');
 });
+
+test('a prompt-only session takes its project and branch from the user record', () => {
+  let state = createClaudeState();
+  state = mergeClaudeState(state, claudeRecordUpdate({
+    type: 'user', sessionId: 'abcdef12', cwd: '/work/demo', gitBranch: 'main',
+    timestamp: claudeTs(), message: { content: '开始' }
+  }), CLAUDE_DAY);
+  const report = claudeReport(state, CLAUDE_DAY, CLAUDE_DAY);
+  assert.equal(report.project, 'demo');
+  assert.equal(report.detail, 'branch: main');
+});
+
+test('claudeReport falls back to the encoded project directory name', () => {
+  let state = createClaudeState();
+  state = mergeClaudeState(state, claudeRecordUpdate({
+    type: 'user', sessionId: 'abcdef12', timestamp: claudeTs(), message: { content: '开始' }
+  }), CLAUDE_DAY);
+  assert.equal(claudeReport(state, CLAUDE_DAY, CLAUDE_DAY, '-work-demo').project, '-work-demo');
+});
