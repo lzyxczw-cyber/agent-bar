@@ -1,6 +1,6 @@
 # Agent Bar · 交接与下一步
 
-> 状态快照：**v0.3.9**，2026-11-18。当前 `main` 已从公开初始提交 `9186deb` 起步，并合并 PR #1（协议不匹配、问题答复、文档对齐）、PR #6（把 DSH bridge 打进 App，启动时同步到 Application Support）、PR #8（右上角网速改成上下两行，上面下载、下面上传）和 PR #11（`build.sh` 复制 `tools/lib/`，缺少 `Contents/Resources/tools/lib/adapter-logic.mjs` 时失败，合并 `92a603c`）。v0.3.5 加了 GitHub Release 更新检查和通知授权引导。v0.3.6 加了 Hermes 本机读取，并确认外部审批保持只读。v0.3.6 已打 tag；已经发布的 `Agent-Bar-0.3.6.dmg` 是 bundled-bridge 改动之前打的包。没有单独的 v0.3.5 tag 或安装包，更新检查和通知授权引导随 v0.3.6 发布。v0.3.7 已打 tag，官方安装包是 `Agent-Bar-0.3.7.dmg`，里面带上了 DSH bridge，只装安装包也能离开演示模式，但漏了 `tools/lib/adapter-logic.mjs`。v0.3.8 已打 tag，官方安装包是 `Agent-Bar-0.3.8.dmg`，右上角网速改成上下两行（上面下载、下面上传，来自 PR #8），并且仍然包含这份 bridge，同样漏了 `tools/lib/adapter-logic.mjs`。v0.3.9 是下一版官方包，会带上 `tools/lib/adapter-logic.mjs`。v0.3.9 的 GitHub Release 还没有，也还没有 v0.3.9 tag 或 `Agent-Bar-0.3.9.dmg`，当前可下载的安装包仍是 v0.3.8。
+> 状态快照：**v0.3.9**，2026-11-18。当前 `main` 已从公开初始提交 `9186deb` 起步，并合并 PR #1（协议不匹配、问题答复、文档对齐）、PR #6（把 DSH bridge 打进 App，启动时同步到 Application Support）、PR #8（右上角网速改成上下两行，上面下载、下面上传）和 PR #11（`build.sh` 复制 `tools/lib/`，缺少 `Contents/Resources/tools/lib/adapter-logic.mjs` 时失败，合并 `92a603c`）。v0.3.5 加了 GitHub Release 更新检查和通知授权引导。v0.3.6 加了 Hermes 本机读取，并确认外部审批保持只读。v0.3.6 已打 tag；已经发布的 `Agent-Bar-0.3.6.dmg` 是 bundled-bridge 改动之前打的包。没有单独的 v0.3.5 tag 或安装包，更新检查和通知授权引导随 v0.3.6 发布。v0.3.7 已打 tag，官方安装包是 `Agent-Bar-0.3.7.dmg`，里面带上了 DSH bridge，只装安装包也能离开演示模式，但漏了 `tools/lib/adapter-logic.mjs`。v0.3.8 已打 tag，官方安装包是 `Agent-Bar-0.3.8.dmg`，右上角网速改成上下两行（上面下载、下面上传，来自 PR #8），并且仍然包含这份 bridge，同样漏了 `tools/lib/adapter-logic.mjs`。v0.3.9 已打 tag，官方安装包是 `Agent-Bar-0.3.9.dmg`，带上了 `tools/lib/adapter-logic.mjs`，并且仍然包含这份 bridge 和上下两行网速。
 > bundle 版本见 `build.sh` 的 `CFBundleShortVersionString` / `CFBundleVersion`：`0.3.9`。
 > 本机 `~/Documents` 的 File Provider 扩展属性会让本地 `codesign --verify` 失败（CI 不受影响）。
 > 这份文档按当前公开树校对，不沿用已删除仓库里的 v0.4.1-dev 说法。看完这一页就能接手。
@@ -20,7 +20,7 @@ ls ~/.dsh/.credentials.yaml   # 需要本机装过 DSH 并登录过（bridge 用
 
 日志：`/tmp/agentbar.log`、`/tmp/agentbar-bridge.log`；
 运行数据：`~/Library/Application Support/AgentBar/{bridge,agents}/`（**机器本地，不随仓库走**）。
-开发时 `./start.sh` 从仓库 `bridge/` 同步程序文件。打进 App 的包在每次启动时用 `tools/sync-bundled-bridge.sh` 把 `Contents/Resources/bridge/` 同步到同一目录，所以只装 DMG、没有仓库、也没跑过 `./start.sh` 时，`dsh-bridge.mjs` 也会出现在那里。两边都留下 `status.json`、`control/`、`audit.log`、`usage-state.json`。`start.sh` 在重启 bridge 前会删掉旧的 `status.json`，避免读到已经退出的进程快照。本机 Node 仍然要自己装；找不到时日志是 `node not found`，栏上保持演示。桌面 adapter 也要整份进包：`agentbar-app-adapters.mjs` 导入旁边的 `lib/adapter-logic.mjs`。已发布的 0.3.7 和 0.3.8 DMG 没有这个文件，adapter 以 `ERR_MODULE_NOT_FOUND` 退出，Codex / WorkBuddy / Grok Bot / Hermes 不出现；DSH 仍可用。`build.sh` 会复制 `tools/lib/`，缺了就失败。v0.3.9 是下一版官方包，会带上 `tools/lib/adapter-logic.mjs`；v0.3.9 的 DMG、tag 和 GitHub Release 都还没有。cask 仍指向已发布的 0.3.8 DMG。
+开发时 `./start.sh` 从仓库 `bridge/` 同步程序文件。打进 App 的包在每次启动时用 `tools/sync-bundled-bridge.sh` 把 `Contents/Resources/bridge/` 同步到同一目录，所以只装 DMG、没有仓库、也没跑过 `./start.sh` 时，`dsh-bridge.mjs` 也会出现在那里。两边都留下 `status.json`、`control/`、`audit.log`、`usage-state.json`。`start.sh` 在重启 bridge 前会删掉旧的 `status.json`，避免读到已经退出的进程快照。本机 Node 仍然要自己装；找不到时日志是 `node not found`，栏上保持演示。桌面 adapter 也要整份进包：`agentbar-app-adapters.mjs` 导入旁边的 `lib/adapter-logic.mjs`。已发布的 0.3.7 和 0.3.8 DMG 没有这个文件，adapter 以 `ERR_MODULE_NOT_FOUND` 退出，Codex / WorkBuddy / Grok Bot / Hermes 不出现；DSH 仍可用。`build.sh` 会复制 `tools/lib/`，缺了就失败。v0.3.9 已打 tag，官方 `Agent-Bar-0.3.9.dmg` 带上了 `tools/lib/adapter-logic.mjs`。cask 指向这份已发布的 0.3.9 DMG。
 
 **不要**绕过 `build.sh` 里的两处（见 §3）：`-target arm64-apple-macosx14.0` 和签名前的 `xattr -cr`。
 
@@ -67,7 +67,7 @@ ls ~/.dsh/.credentials.yaml   # 需要本机装过 DSH 并登录过（bridge 用
 | 签名 / 公证 | ✅ 已用 Developer ID 签名并通过 Apple 公证（Accepted + stapled）；签名凭据不入库，流程见 `docs/SIGNING.md` |
 | 用量拆分 / 趋势 / 预算 | ✅ 每个 agent 今日 tokens 显示在面板行；设置里 7 天 sparkline；每日 token 预算超限后右栏变橙并当天提醒 |
 | 外部 agent 一键接入 | ✅ Claude Code hooks、Codex wrapper；✅ 桌面 adapter：Codex（SQLite）、WorkBuddy（trace）、Grok Bot（persistence）、Hermes（`state.db`，没有库或进程时仍用演示）。同一 App 最多 3 个活跃会话。外部审批只读 |
-| Homebrew / 发布 | ✅ `Casks/agent-bar.rb` + `v*` tag release workflow，上传 `Agent-Bar-<version>.dmg`；✅ 已发布的 v0.3.8 DMG 已公证，cask 校验和仍对应该包。v0.3.9 的公证 DMG 和 cask 更新要等新包装出来 |
+| Homebrew / 发布 | ✅ `Casks/agent-bar.rb` + `v*` tag release workflow，上传 `Agent-Bar-<version>.dmg`；✅ 已发布的 v0.3.9 DMG 已公证，cask 校验和已同步 |
 
 ---
 
@@ -137,17 +137,17 @@ otool -l agentbar | grep -A3 LC_BUILD_VERSION   # 期望 minos 14.0
 ## 4e. v0.3.8
 
 - **右上角网速上下两行**：bundle 版本升到 0.3.8，官方 `Agent-Bar-0.3.8.dmg` 已公证发布。网速改成上面下载、下面上传，来自 PR #8，用来省横向空间。这一版仍然包含 bundled DSH bridge，只装安装包也可以离开演示模式。v0.3.7 已打 tag。已经发布的 v0.3.7 DMG 是这次网速改动之前打的包，里面已经带上了 bridge。
-- **桌面 adapter 的依赖没打进包**：`agentbar-app-adapters.mjs` 导入 `./lib/adapter-logic.mjs`，但已发布的 0.3.7 和 0.3.8 官方 DMG 都没有 `Contents/Resources/tools/lib/adapter-logic.mjs`。watcher 报 `ERR_MODULE_NOT_FOUND` 后退出，Codex / WorkBuddy / Grok Bot / Hermes 不会出现；DSH bridge 不走这条路径。`build.sh` 会复制 `tools/lib/`，并在这个文件缺失时失败（PR #11，合并 `92a603c`）。带上这个文件的下一版官方包是 v0.3.9，见 §4f。
+- **桌面 adapter 的依赖没打进包**：`agentbar-app-adapters.mjs` 导入 `./lib/adapter-logic.mjs`，但已发布的 0.3.7 和 0.3.8 官方 DMG 都没有 `Contents/Resources/tools/lib/adapter-logic.mjs`。watcher 报 `ERR_MODULE_NOT_FOUND` 后退出，Codex / WorkBuddy / Grok Bot / Hermes 不会出现；DSH bridge 不走这条路径。`build.sh` 会复制 `tools/lib/`，并在这个文件缺失时失败（PR #11，合并 `92a603c`）。带上这个文件的官方包是 v0.3.9，见 §4f。
 
 ## 4f. v0.3.9
 
-- **带上 `tools/lib/adapter-logic.mjs`**：bundle 版本升到 0.3.9，用来发布包含这份文件的公证 DMG。已发布的 0.3.7 和 0.3.8 官方 DMG 都没有 `Contents/Resources/tools/lib/adapter-logic.mjs`，桌面 adapter 以 `ERR_MODULE_NOT_FOUND` 退出。v0.3.8 已打 tag，当前可下载的官方安装包仍是 `Agent-Bar-0.3.8.dmg`。v0.3.9 的 GitHub Release 还没有，也还没有 v0.3.9 tag 或 `Agent-Bar-0.3.9.dmg`；cask 的版本和 sha256 仍指向已发布的 v0.3.8 DMG。
+- **带上 `tools/lib/adapter-logic.mjs`**：bundle 版本升到 0.3.9，官方 `Agent-Bar-0.3.9.dmg` 已公证发布。这一版带上了 `tools/lib/adapter-logic.mjs`（来自 PR #11），桌面 adapter 可以加载。这一版仍然包含 bundled DSH bridge 和右上角上下两行网速（上面下载、下面上传，来自 PR #8）。已发布的 0.3.7 和 0.3.8 官方 DMG 都没有 `Contents/Resources/tools/lib/adapter-logic.mjs`，桌面 adapter 以 `ERR_MODULE_NOT_FOUND` 退出。v0.3.8 已打 tag。已经发布的 v0.3.8 DMG 是这次打包修复之前打的包。
 
 ## 5. 最近完成（时间线）
 
 | 日期 | 内容 |
 |---|---|
-| 11-18 | **v0.3.9**：bundle 升到 0.3.9，下一版官方包会带上 `tools/lib/adapter-logic.mjs`；DMG、tag 和 GitHub Release 还没有 |
+| 11-18 | **v0.3.9**：官方 DMG 带上 `tools/lib/adapter-logic.mjs`（来自 PR #11），仍然包含 DSH bridge 和上下两行网速。已发布的 0.3.7 和 0.3.8 漏了这个文件 |
 | 11-18 | **v0.3.8**：官方 DMG 把右上角网速改成上下两行（来自 PR #8，上面下载、下面上传），仍然包含 DSH bridge。这一版和 v0.3.7 都漏了 `adapter-logic.mjs` |
 | 11-18 | **v0.3.7**：官方 DMG 带上 DSH bridge（来自 PR #6），只装安装包也能离开演示模式 |
 | 11-17 | **v0.3.6**：Hermes 只读 `state.db`；外部审批保持只读并写明原因；布局、用量、提问和 adapter 推断测试 |
