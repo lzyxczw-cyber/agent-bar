@@ -130,6 +130,28 @@ struct LiveFeed: Decodable {
         let usageUrl: String?
         let topUpUrl: String?
         let error: String?
+
+        private enum CodingKeys: String, CodingKey {
+            case status, currency, balance, bonusBalance, usageUrl, topUpUrl, error
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            // DSH has returned balance as a JSON string so far, but a single
+            // number would fail `String` decoding and discard the entire feed.
+            func text(_ key: CodingKeys) -> String? {
+                if let value = try? container.decode(String.self, forKey: key) { return value }
+                if let value = try? container.decode(Double.self, forKey: key) { return String(value) }
+                return nil
+            }
+            status = text(.status)
+            currency = text(.currency)
+            balance = text(.balance)
+            bonusBalance = text(.bonusBalance)
+            usageUrl = text(.usageUrl)
+            topUpUrl = text(.topUpUrl)
+            error = text(.error)
+        }
     }
 
     struct StepDTO: Decodable {

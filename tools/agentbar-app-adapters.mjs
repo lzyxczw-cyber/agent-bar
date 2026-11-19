@@ -62,8 +62,14 @@ function appRunning(pattern) {
 }
 
 function agentBarRunning() {
-  return pgrep('/Agent Bar.app/Contents/MacOS/AgentBar') ||
-    pgrep('/AgentBar.app/Contents/MacOS/AgentBar');
+  // The GUI app is this watcher's parent, and macOS pgrep cannot see the
+  // calling process's ancestors (it reports an empty match). `ps` does list it.
+  const result = spawnSync('/bin/ps', ['-axo', 'args='], { encoding: 'utf8' });
+  if (result.status !== 0) return false;
+  return String(result.stdout || '').split('\n').some((line) =>
+    line.includes('/Agent Bar.app/Contents/MacOS/AgentBar') ||
+    line.includes('/AgentBar.app/Contents/MacOS/AgentBar')
+  );
 }
 
 function sqliteJSON(db, sql) {
@@ -124,11 +130,9 @@ function syncGroup(group, reports) {
 function isOurReport(file) {
   try {
     const data = JSON.parse(fs.readFileSync(file, 'utf8'));
-    if (!data || typeof data.id !== 'string') return false;
-    if (data.source === SOURCE) return true;
-    return data.id === 'codex' || data.id === 'grok' || data.id === 'workbuddy' || data.id === 'hermes' ||
-      data.id.startsWith('codex-') || data.id.startsWith('grok-') ||
-      data.id.startsWith('workbuddy-') || data.id.startsWith('hermes-');
+    // Only delete files this watcher wrote. Matching id prefixes here used to
+    // remove heartbeats from the Codex CLI wrapper, which shares the agents dir.
+    return Boolean(data && data.source === SOURCE);
   } catch {
     return false;
   }
@@ -304,30 +308,40 @@ function newestFiles(root, suffix, maxAgeMs, maxDepth = 3) {
 }
 
 function readTraceStart(file) {
+  let fd = null;
   try {
-    const fd = fs.openSync(file, 'r');
+    fd = fs.openSync(file, 'r');
     const buffer = Buffer.alloc(8192);
     const bytes = fs.readSync(fd, buffer, 0, buffer.length, 0);
-    fs.closeSync(fd);
     const line = buffer.toString('utf8', 0, bytes).split('\n')[0];
     const parsed = JSON.parse(line);
     return parsed && parsed.type === 'trace_start' ? parsed.trace : null;
-  } catch { return null; }
+  } catch {
+    return null;
+  } finally {
+    if (fd !== null) {
+      try { fs.closeSync(fd); } catch {}
+    }
+  }
 }
 
 function parseWorkBuddyTrace(file) {
   let text = '';
   let start = 0;
+  let fd = null;
   try {
     const stat = fs.statSync(file);
     start = Math.max(0, stat.size - 128 * 1024);
-    const fd = fs.openSync(file, 'r');
+    fd = fs.openSync(file, 'r');
     const buffer = Buffer.alloc(stat.size - start);
     fs.readSync(fd, buffer, 0, buffer.length, start);
-    fs.closeSync(fd);
     text = buffer.toString('utf8');
   } catch {
     return null;
+  } finally {
+    if (fd !== null) {
+      try { fs.closeSync(fd); } catch {}
+    }
   }
   const lines = text.split('\n');
   if (start > 0) lines.shift();
@@ -420,8 +434,14 @@ function grokCandidates() {
   }
 }
 
+// Grok persists whole conversations in one blob. Parsing requires the full
+// file, so cap it instead of reading a multi-MB document every 3 seconds.
+const MAX_GROK_BLOB_BYTES = 4 * 1024 * 1024;
+
 function grokEntries(candidate) {
   try {
+    const stat = fs.statSync(candidate.file);
+    if (!stat.isFile() || stat.size > MAX_GROK_BLOB_BYTES) return null;
     const data = JSON.parse(fs.readFileSync(candidate.file, 'utf8'));
     const entries = data && data.value && Array.isArray(data.value.entries) ? data.value.entries : null;
     if (!entries || entries.length === 0) return null;

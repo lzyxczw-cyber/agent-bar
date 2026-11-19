@@ -14,6 +14,13 @@ function runSync(source, destination) {
   return spawnSync('bash', [SYNC, source, destination], { encoding: 'utf8' });
 }
 
+// macOS caps Unix socket paths at 104 bytes and os.tmpdir() under /var/folders
+// is already long, so socket tests need a short base directory.
+function shortTempRoot(prefix) {
+  const base = fs.existsSync('/tmp') ? '/tmp' : os.tmpdir();
+  return fs.mkdtempSync(path.join(base, prefix));
+}
+
 function writeTree(dir, files) {
   for (const [rel, contents] of Object.entries(files)) {
     const file = path.join(dir, rel);
@@ -77,7 +84,7 @@ test('fresh install writes the program and skips dev tools and generated files',
 });
 
 test('refresh replaces program files and keeps live runtime state', async () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'agentbar-sync-keep-'));
+  const root = shortTempRoot('ab-keep-');
   const source = makeSource(root);
   const dest = path.join(root, 'Application Support', 'AgentBar', 'bridge');
   writeTree(dest, {

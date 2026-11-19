@@ -61,7 +61,7 @@ v0.3.6 已打 tag。已经发布的 v0.3.6 DMG 是 bundled-bridge 改动之前�
 
 ## 思考与过程
 
-- bridge 会把每个 agent 的最新英文 reasoning 通过 **DeepSeek API** 翻译成简体中文，写入 `thoughtZh`；胶囊和面板优先显示中文，原文 `thought` 保留。
+- bridge 会把 DSH 会话的最新英文 reasoning 通过 **DeepSeek API** 翻译成简体中文，写入 `thoughtZh`；胶囊和面板优先显示中文，原文 `thought` 保留。外部 agent（Codex / WorkBuddy 等）的 thought 来自其他 App 的本地状态，**默认不发送**；需要中文时用 `--translate-external` 或在设置里打开「外部 App 思考也中文化」显式开启。
 - 面板「思考与过程」：完整中文思考（最多 8 行）+ 最近 8 个步骤（思考/工具/结果/回复 + 时间）。思考正文渲染行内 Markdown（加粗、斜体、行内代码、系统支持的链接），不解析 HTML。胶囊摘要仍是单行纯文本。
 - 设置里可关闭「思考自动中文化」，关闭后显示英文原文。
 - 翻译 key 来自 `~/.dsh/.credentials.yaml` 的 `DEEPSEEK_API_KEY`（或环境变量），只用于请求头；不会打印/写入 status.json。翻译失败时回退原文。
@@ -111,6 +111,7 @@ v0.3.6 已打 tag。已经发布的 v0.3.6 DMG 是 bundled-bridge 改动之前�
   - 固定面板（切换到其他 App 不收起）
   - 通知开关
   - 思考自动中文化开关
+  - **外部 App 思考也中文化**（默认关；开启后会把 Codex / WorkBuddy 等外部 agent 的本地推理发往 DeepSeek，切换即时重启 bridge）
   - **天气位置**（输入城市名搜索，选择候选后立即刷新；常用城市作为离线快捷入口）
   - **每日 token 预算**（超过后右栏用量变橙并当天提醒一次；0 = 关闭）
   - **用量趋势**（近 7 天 sparkline）
@@ -141,7 +142,7 @@ v0.3.6 已打 tag。已经发布的 v0.3.6 DMG 是 bundled-bridge 改动之前�
 - 读取 `~/.dsh/.credentials.yaml` 的 browser-session secret，在内存中自签 DSH Web 会话 Cookie（不写 DSH 配置）；
 - session/list + session/page + WebSocket remote 事件流；
 - 输出 `status.json`（原子写 0600、变更即写 + 5s 心跳）；新增 `thoughtZh`、`external agents`、`bridge.translate` 等字段，详见 [bridge/README.md](bridge/README.md)；
-- 能看到审批和提问。审批、以及能校验的提问，可通过本机 control 通道答复（见上方「通知与审批」）。不会发 prompt、不会改命令；事件不离开本机（翻译请求除外，只发往 DeepSeek API 的 reasoning 文本）。
+- 能看到审批和提问。审批、以及能校验的提问，可通过本机 control 通道答复（见上方「通知与审批」）。不会发 prompt、不会改命令；事件不离开本机（翻译请求除外：默认只发 DSH 会话的 reasoning 文本，外部 agent 需 `--translate-external`）。
 
 ### 一键接入（Claude Code / Codex）
 
@@ -154,6 +155,7 @@ node tools/agentbar-install-adapter.mjs uninstall-claude
 
 - Claude Code：备份 `~/.claude/settings.json` 后合并 hooks，不覆盖已有 hooks；重启 Claude Code 生效。
 - Codex：生成 `~/Library/Application Support/AgentBar/adapters/codex-agentbar`，按输出提示加 alias。
+  升级前装过旧 wrapper 的，再执行一次本命令即可换成独立的 `codex-cli` 报告 id，避免和桌面 adapter 抢同一个 `agents/codex.json`。
 - 两者都只是状态上报。审批仍在各自的工具里处理：面板不会为它们显示「允许」。
 
 ### 外部 agent 接入（Codex / Claude Code / 任意 CLI）
