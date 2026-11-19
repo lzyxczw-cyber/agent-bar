@@ -313,3 +313,13 @@ test('a session older than the active window is dropped', () => {
   state = mergeClaudeState(state, claudeRecordUpdate(assistantRecord([{ type: 'text', text: 'x' }])), CLAUDE_DAY);
   assert.equal(claudeReport(state, CLAUDE_DAY + 16 * 60 * 1000, CLAUDE_DAY), null);
 });
+
+test('aggregateApp prefers lastActivity for the parent summary', () => {
+  const parent = aggregateApp({ group: 'claude', name: 'Claude Code', bundleID: null }, [
+    { id: 'claude-old', status: 'running', project: 'old', tool: 'old', startedAt: 200, lastActivity: 300 },
+    { id: 'claude-new', status: 'running', project: 'new', tool: 'new', startedAt: 100, lastActivity: 400 }
+  ]);
+  assert.equal(parent.project, 'new');
+  assert.equal(parent.tool, 'new');
+  assert.equal(parent.sessions[0].id, 'claude-new');
+});

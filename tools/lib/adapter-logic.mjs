@@ -216,7 +216,7 @@ export function standbyParentStatus (raw) {
 export function aggregateApp (adapter, reports) {
   const active = (reports || [])
     .filter ((report) => report && report.status === 'running' && report.id !== adapter.group)
-    .sort ((a, b) => (b.startedAt || 0) - (a.startedAt || 0));
+    .sort ((a, b) => ((b.lastActivity || b.startedAt || 0) - (a.lastActivity || a.startedAt || 0)));
   const idle = (reports || []).find ((report) => report && report.id === adapter.group) || (reports || [])[0] || null;
   if (active.length === 0) {
     if (!idle) return null;
