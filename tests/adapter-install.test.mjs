@@ -48,3 +48,18 @@ test('uninstall-claude still removes hooks installed by older versions', () => {
   assert.equal(removed.status, 0, removed.stderr);
   assert.equal(JSON.parse(fs.readFileSync(settings, 'utf8')).hooks, undefined);
 });
+
+test('status reports transcript mode and calls out legacy hooks', () => {
+  const home = tempHome();
+  const base = run(home, 'status');
+  assert.equal(base.status, 0, base.stderr);
+  assert.match(base.stdout, /transcript/i);
+  assert.doesNotMatch(base.stdout, /Claude Code:\s+not installed/);
+
+  const settings = path.join(home, '.claude', 'settings.json');
+  fs.writeFileSync(settings, JSON.stringify({
+    hooks: { PreToolUse: [{ hooks: [{ command: 'node /x/tools/agentbar-report.mjs --id claude-code' }] }] }
+  }, null, 2) + '\n');
+  const legacy = run(home, 'status');
+  assert.match(legacy.stdout, /1 legacy hook/);
+});
