@@ -1,7 +1,7 @@
 # Agent Bar · 交接与下一步
 
-> 状态快照：**v0.3.9**，2026-11-18。当前 `main` 已从公开初始提交 `9186deb` 起步，并合并 PR #1（协议不匹配、问题答复、文档对齐）、PR #6（把 DSH bridge 打进 App，启动时同步到 Application Support）、PR #8（右上角网速改成上下两行，上面下载、下面上传）和 PR #11（`build.sh` 复制 `tools/lib/`，缺少 `Contents/Resources/tools/lib/adapter-logic.mjs` 时失败，合并 `92a603c`）。v0.3.5 加了 GitHub Release 更新检查和通知授权引导。v0.3.6 加了 Hermes 本机读取，并确认外部审批保持只读。v0.3.6 已打 tag；已经发布的 `Agent-Bar-0.3.6.dmg` 是 bundled-bridge 改动之前打的包。没有单独的 v0.3.5 tag 或安装包，更新检查和通知授权引导随 v0.3.6 发布。v0.3.7 已打 tag，官方安装包是 `Agent-Bar-0.3.7.dmg`，里面带上了 DSH bridge，只装安装包也能离开演示模式，但漏了 `tools/lib/adapter-logic.mjs`。v0.3.8 已打 tag，官方安装包是 `Agent-Bar-0.3.8.dmg`，右上角网速改成上下两行（上面下载、下面上传，来自 PR #8），并且仍然包含这份 bridge，同样漏了 `tools/lib/adapter-logic.mjs`。v0.3.9 已打 tag，官方安装包是 `Agent-Bar-0.3.9.dmg`，带上了 `tools/lib/adapter-logic.mjs`，并且仍然包含这份 bridge 和上下两行网速。
-> bundle 版本见 `build.sh` 的 `CFBundleShortVersionString` / `CFBundleVersion`：`0.3.9`。
+> 状态快照：**v0.3.10**，2026-11-20。当前 `main` 已从公开初始提交 `9186deb` 起步，并合并 PR #1（协议不匹配、问题答复、文档对齐）、PR #6（把 DSH bridge 打进 App，启动时同步到 Application Support）、PR #8（右上角网速改成上下两行，上面下载、下面上传）和 PR #11（`build.sh` 复制 `tools/lib/`，缺少 `Contents/Resources/tools/lib/adapter-logic.mjs` 时失败，合并 `92a603c`）。v0.3.5 加了 GitHub Release 更新检查和通知授权引导。v0.3.6 加了 Hermes 本机读取，并确认外部审批保持只读。v0.3.6 已打 tag；已经发布的 `Agent-Bar-0.3.6.dmg` 是 bundled-bridge 改动之前打的包。没有单独的 v0.3.5 tag 或安装包，更新检查和通知授权引导随 v0.3.6 发布。v0.3.7 已打 tag，官方安装包是 `Agent-Bar-0.3.7.dmg`，里面带上了 DSH bridge，只装安装包也能离开演示模式，但漏了 `tools/lib/adapter-logic.mjs`。v0.3.8 已打 tag，官方安装包是 `Agent-Bar-0.3.8.dmg`，右上角网速改成上下两行（上面下载、下面上传，来自 PR #8），并且仍然包含这份 bridge，同样漏了 `tools/lib/adapter-logic.mjs`。v0.3.9 已打 tag，官方安装包是 `Agent-Bar-0.3.9.dmg`，带上了 `tools/lib/adapter-logic.mjs`，并且仍然包含这份 bridge 和上下两行网速。v0.3.10 已打 tag，官方安装包是 `Agent-Bar-0.3.10.dmg`，加入 Claude Code Bash 审批面板。
+> bundle 版本见 `build.sh` 的 `CFBundleShortVersionString` / `CFBundleVersion`：`0.3.10`。
 > 本机 `~/Documents` 的 File Provider 扩展属性会让本地 `codesign --verify` 失败（CI 不受影响）。
 > 这份文档按当前公开树校对，不沿用已删除仓库里的 v0.4.1-dev 说法。看完这一页就能接手。
 
@@ -143,13 +143,13 @@ otool -l agentbar | grep -A3 LC_BUILD_VERSION   # 期望 minos 14.0
 
 - **带上 `tools/lib/adapter-logic.mjs`**：bundle 版本升到 0.3.9，官方 `Agent-Bar-0.3.9.dmg` 已公证发布。这一版带上了 `tools/lib/adapter-logic.mjs`（来自 PR #11），桌面 adapter 可以加载。这一版仍然包含 bundled DSH bridge 和右上角上下两行网速（上面下载、下面上传，来自 PR #8）。已发布的 0.3.7 和 0.3.8 官方 DMG 都没有 `Contents/Resources/tools/lib/adapter-logic.mjs`，桌面 adapter 以 `ERR_MODULE_NOT_FOUND` 退出。v0.3.8 已打 tag。已经发布的 v0.3.8 DMG 是这次打包修复之前打的包。
 
-## 4d. Claude 面板审批（已完成 2026-11-19）
+## 4g. v0.3.10 · Claude 面板审批（2026-11-19）
 
 - **触发方式**：安装器写入 `PermissionRequest` hook（默认 matcher `^Bash$`，`timeout: 45`），只有原生确认框本来会出现时才触发；不是每条 Bash 都拦截。
 - **握手**：hook 写 `claude-approvals/pending/<id>.json`（`schema/id/nonce/sessionId/cwd/tool/command/createdAt`），面板写 `decisions/<id>.json`（`schema/id/nonce/decision/decidedAt`）并追加 `audit.log`；`heartbeat` 由 App 每秒触碰。目录 0700、文件 0600，nonce 防复用。
 - **不经过 bridge**：App 的 feed 定时器直接扫描 pending 目录，bridge 离线也能答；找不到真实聚合行时合成 `claude-approval` 行。
 - **已知限制**：原生确认框与面板并存、先答者生效，原生先答时卡片最多 40 秒后消失；只镜像 `PermissionRequest` 覆盖的工具（默认仅 Bash）；App 未运行（heartbeat 超过 10 秒）时 hook 静默退出，行为与未安装一致。
-- **测试**：Node 纯函数 8 个、hook 集成 6 个、安装器 6 个；Swift 解析/选择/决定 payload 19 个 check。
+- **测试**：Node 纯函数 8 个、hook 集成 6 个、安装器 6 个；Swift 解析/选择/决定 payload 与安全校验 30 个 check。
 
 ## 5. 最近完成（时间线）
 
