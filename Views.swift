@@ -1941,8 +1941,8 @@ struct PanelView: View {
             return
         }
         let dangerous = isDangerousApproval(agent)
-        if dangerous && armedApprovalId != agent.id {
-            armedApprovalId = agent.id
+        if dangerous && !approvalStillArmed(armed: armedApprovalId, current: agent.approvalId) {
+            armedApprovalId = agent.approvalId
             store.approvalNotice = "危险操作：再次长按允许以确认"
             NSSound.beep()
             return
@@ -2325,7 +2325,7 @@ struct PanelView: View {
     }
 
     private func commandApprovalCard(_ agent: Agent) -> some View {
-        let canAnswerClaude = claudeApprovalCanAnswer(agent.approvalId)
+        let canAnswerClaude = agent.isClaudeApproval
         return VStack(alignment: .leading, spacing: 9) {
             HStack(spacing: 6) {
                 Image(systemName: "hand.raised.fill")
@@ -2371,7 +2371,7 @@ struct PanelView: View {
                             } else if agent.approvalId != nil {
                                 let dangerous = isDangerousApproval(agent)
                                 HoldToConfirmButton(
-                                    title: dangerous && armedApprovalId == agent.id ? "再次长按允许" : "按住允许",
+                                    title: dangerous && approvalStillArmed(armed: armedApprovalId, current: agent.approvalId) ? "再次长按允许" : "按住允许",
                                     icon: "checkmark",
                                     tint: Color(red: 0.46, green: 0.90, blue: 0.62)
                                 ) {

@@ -85,6 +85,7 @@ struct Agent: Identifiable {
     var approvalKind: String? = nil
     var questions: [AgentQuestion] = []
     var questionAnswerable: Bool = false
+    var isClaudeApproval: Bool = false
 }
 
 // MARK: - Live feed from bridge/status.json (dsh-bridge)

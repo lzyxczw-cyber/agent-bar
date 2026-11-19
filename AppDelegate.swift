@@ -51,6 +51,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private var panelKeyMonitor: Any?
     private var workspaceObserver: NSObjectProtocol?
     private var lastNotifiedWaiting: Set<String> = []
+    private var lastClaudeApprovalID: String?
     private var lastNotifiedFinished: Set<String> = []
     private var previousStatuses: [String: AgentStatus] = [:]
     private var liveSeenOnce = false
@@ -560,9 +561,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             } ?? []
 
         if let picked = selectClaudePendingApproval(loaded) {
-            applyClaudeApproval(picked.approval, extra: picked.extra)
+            let rowID = applyClaudeApproval(picked.approval, extra: picked.extra)
+            announceClaudeApproval(picked.approval, rowID: rowID)
         } else {
+            lastClaudeApprovalID = nil
             clearClaudeApproval()
+        }
+    }
+
+    private func announceClaudeApproval(_ approval: ClaudePendingApproval, rowID: String) {
+        let plan = claudeApprovalAnnouncement(
+            id: approval.id,
+            lastAnnounced: lastClaudeApprovalID,
+            rowID: rowID,
+            selectedID: ui.selectedID
+        )
+        guard plan.announce else { return }
+        lastClaudeApprovalID = approval.id
+        // Claude approvals bypass handleAgentTransitions (that path needs a live
+        // DSH feed and runs before the merge), so notify here.
+        if notificationsEnabled() {
+            postNotification(
+                title: "等待审批 · Claude Code",
+                body: approval.command,
+                agentID: rowID
+            )
+        }
+        guard plan.select else { return }
+        ui.animationLockUntil = Date().addingTimeInterval(0.45)
+        withAnimation(.spring(response: 0.45, dampingFraction: 0.80)) {
+            ui.selectedID = rowID
         }
     }
 
@@ -591,7 +619,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
     }
 
-    private func applyClaudeApproval(_ approval: ClaudePendingApproval, extra: Int) {
+    private func applyClaudeApproval(_ approval: ClaudePendingApproval, extra: Int) -> String {
         let project = (approval.cwd as NSString).lastPathComponent
         let displayProject = project.isEmpty ? "Claude Code" : project
         let note = claudeApprovalNotice(project: displayProject, extra: extra)
@@ -602,14 +630,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             store.agents[index].approvalId = approvalId
             store.agents[index].approvalCommand = approval.command
             store.agents[index].note = note
-            return
+            store.agents[index].isClaudeApproval = true
+            return "claude"
         }
         if let index = store.agents.firstIndex(where: { $0.id == "claude-approval" }) {
             store.agents[index].project = displayProject
             store.agents[index].approvalId = approvalId
             store.agents[index].approvalCommand = approval.command
             store.agents[index].note = note
-            return
+            store.agents[index].isClaudeApproval = true
+            return "claude-approval"
         }
         store.agents.append(Agent(
             id: "claude-approval",
@@ -621,8 +651,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             approvalCommand: approval.command,
             approvalId: approvalId,
             note: note,
-            isExternal: true
+            isExternal: true,
+            isClaudeApproval: true
         ))
+        return "claude-approval"
     }
 
     private func clearClaudeApproval() {
@@ -634,6 +666,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             store.agents[index].approvalId = nil
             store.agents[index].approvalCommand = nil
             store.agents[index].note = nil
+            store.agents[index].isClaudeApproval = false
             if store.agents[index].status == .waiting {
                 store.agents[index].status = .running
             }

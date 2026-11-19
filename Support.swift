@@ -765,7 +765,12 @@ func claudeApprovalId(_ requestId: String) -> String {
 func claudeApprovalRequestId(_ approvalId: String?) -> String? {
     guard let approvalId, approvalId.hasPrefix(claudeApprovalPrefix) else { return nil }
     let requestId = String(approvalId.dropFirst(claudeApprovalPrefix.count))
-    return requestId.isEmpty ? nil : requestId
+    // The hook only writes canonical UUIDs; reject anything else so a feed
+    // report cannot steer the pending/decision path outside the directory.
+    guard !requestId.isEmpty, requestId.count <= 64 else { return nil }
+    let allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-")
+    guard requestId.unicodeScalars.allSatisfy({ allowed.contains($0) }) else { return nil }
+    return requestId
 }
 
 func claudeApprovalCanAnswer(_ approvalId: String?) -> Bool {
@@ -794,4 +799,23 @@ func claudeApprovalDecisionJSON(_ approval: ClaudePendingApproval, decision: Str
 
 func claudeApprovalNotice(project: String, extra: Int) -> String {
     extra > 0 ? "\(project) · 还有 \(extra) 个待审批" : project
+}
+
+/// The danger re-arm belongs to one approval, not one row: a row can outlive
+/// the pending it was showing, and a fresh dangerous command must re-arm.
+func approvalStillArmed(armed: String?, current: String?) -> Bool {
+    guard let armed, let current else { return false }
+    return armed == current
+}
+
+/// Announce and focus a newly seen Claude approval once; the same pending
+/// must not re-notify or steal the selection on every feed tick.
+func claudeApprovalAnnouncement(
+    id: String,
+    lastAnnounced: String?,
+    rowID: String,
+    selectedID: String?
+) -> (announce: Bool, select: Bool) {
+    guard lastAnnounced != id else { return (false, false) }
+    return (true, selectedID != rowID)
 }
