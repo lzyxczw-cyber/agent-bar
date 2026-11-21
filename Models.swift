@@ -331,8 +331,10 @@ final class DemoStore: ObservableObject {
     var firstRunning: Agent? { agents.first { $0.status == .running } }
 
     private func step() {
-        tick += 1
+        // Live updates already refresh the UI; ticking here published a new
+        // value every second and forced a full bar relayout for nothing.
         if isLive || feedMode == .protocolMismatch { return }
+        tick += 1
         let now = Date()
         for i in agents.indices {
             switch agents[i].status {
@@ -883,6 +885,10 @@ final class UIModel: ObservableObject {
     @Published var isPinned = false
     @Published var lastManualInteraction = Date.distantPast
     @Published var animationLockUntil = Date.distantPast
+    /// Pixel mascots animate only while the user is looking (bar hover or an
+    /// open panel). A TimelineView update re-lays out the whole bar window and
+    /// measured ~20% CPU when it ran forever in the background.
+    @Published var animationsActive = false
     let railLayout = RailLayout()
 
     func select(_ id: String) {

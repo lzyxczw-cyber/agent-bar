@@ -376,33 +376,71 @@ func pixelSprite(forIconID id: String) -> PixelSprite {
     }
 }
 
+// MARK: - Icon animation gate
+
+private struct IconAnimationsKey: EnvironmentKey {
+    static let defaultValue = true
+}
+
+extension EnvironmentValues {
+    var iconAnimations: Bool {
+        get { self[IconAnimationsKey.self] }
+        set { self[IconAnimationsKey.self] = newValue }
+    }
+}
+
+/// Keeps the menu-bar overlay static while nobody is looking. The root view
+/// observes the UI model so the environment value flips with hover/panel state.
+struct IconAnimationGate<Content: View>: View {
+    @ObservedObject var ui: UIModel
+    let content: Content
+
+    init(ui: UIModel, @ViewBuilder content: () -> Content) {
+        self.ui = ui
+        self.content = content()
+    }
+
+    var body: some View {
+        content.environment(\.iconAnimations, ui.animationsActive)
+    }
+}
+
 struct PixelAvatar: View {
     let sprite: PixelSprite
     let status: AgentStatus
     let size: CGFloat
     let phase: Int
+    @Environment(\.iconAnimations) private var iconAnimations
 
     private var interval: Double {
         agentIconInterval(forStatus: status.iconSetName, suggestedIntervalSec: nil)
     }
 
     var body: some View {
-        TimelineView(.periodic(from: .now, by: interval)) { context in
-            let frames = sprite.frames
-            let frameIndex = agentIconFrameIndex(
-                time: context.date.timeIntervalSinceReferenceDate,
-                interval: interval,
-                frameCount: frames.count,
-                phase: phase
-            )
-            Canvas { context, canvasSize in
-                guard !frames.isEmpty else { return }
-                draw(frames[frameIndex], context: &context, canvasSize: canvasSize)
+        Group {
+            if iconAnimations {
+                TimelineView(.periodic(from: .now, by: interval)) { context in
+                    let frames = sprite.frames
+                    let frameIndex = agentIconFrameIndex(
+                        time: context.date.timeIntervalSinceReferenceDate,
+                        interval: interval,
+                        frameCount: frames.count,
+                        phase: phase
+                    )
+                    Canvas { context, canvasSize in
+                        guard frames.indices.contains(frameIndex) else { return }
+                        draw(frames[frameIndex], context: &context, canvasSize: canvasSize)
+                    }
+                }
+            } else {
+                Canvas { context, canvasSize in
+                    guard let frame = sprite.frames.first else { return }
+                    draw(frame, context: &context, canvasSize: canvasSize)
+                }
             }
-            .frame(width: size, height: size)
-            .opacity(status == .failed ? 0.75 : 1.0)
         }
         .frame(width: size, height: size)
+        .opacity(status == .failed ? 0.75 : 1.0)
     }
 
     private func draw(_ frame: [String], context: inout GraphicsContext, canvasSize: CGSize) {
@@ -573,12 +611,32 @@ struct AnimatedPNGIcon: View {
     let size: CGFloat
     let phase: Int
     let dimmed: Bool
+    @Environment(\.iconAnimations) private var iconAnimations
 
     var body: some View {
-        TimelineView(.periodic(from: .now, by: interval)) { context in
-            frame(at: context.date)
+        Group {
+            if iconAnimations {
+                TimelineView(.periodic(from: .now, by: interval)) { context in
+                    frame(at: context.date)
+                }
+            } else {
+                imageView(images.first)
+            }
         }
         .frame(width: size, height: size)
+    }
+
+    @ViewBuilder
+    private func imageView(_ image: NSImage?) -> some View {
+        if let image {
+            Image(nsImage: image)
+                .interpolation(.high)
+                .resizable()
+                .scaledToFit()
+                .opacity(dimmed ? 0.75 : 1)
+        } else {
+            Color.clear
+        }
     }
 
     private func frame(at date: Date) -> some View {
@@ -650,7 +708,10 @@ struct StatusDot: View {
         }
         .onAppear {
             guard animated else { return }
-            withAnimation(.easeOut(duration: 1.6).repeatForever(autoreverses: false)) {
+            // One expanding ring when the status appears; a repeatForever
+            // animation here re-laid out the whole menu bar at 60 fps and
+            // measured ~14% CPU on an idle machine.
+            withAnimation(.easeOut(duration: 1.6)) {
                 pulse = true
             }
         }
@@ -675,13 +736,23 @@ struct AgentStatusMark: View {
 struct BurstOverlay: View {
     let color: Color
     @State private var animate = false
+    @Environment(\.iconAnimations) private var iconAnimations
 
     private let particles: [(CGFloat, CGFloat, CGFloat)] = [
         (-11, -6, 2.4), (-15, 2, 2.0), (-8, 9, 2.2), (-1, -13, 2.6),
         (8, -9, 2.0), (13, 1, 2.2), (7, 10, 2.4), (-2, 13, 2.0)
     ]
 
+    @ViewBuilder
     var body: some View {
+        if iconAnimations {
+            burst
+        } else {
+            Color.clear
+        }
+    }
+
+    private var burst: some View {
         ZStack {
             Circle()
                 .stroke(color.opacity(0.9), lineWidth: 1.2)
@@ -786,6 +857,7 @@ struct SelectedRailIcon: View {
     let reduceMotion: Bool
     @State private var iconScale: CGFloat = 0.72
     @State private var halo = false
+    @Environment(\.iconAnimations) private var iconAnimations
 
     var body: some View {
         ZStack(alignment: .bottomTrailing) {
@@ -818,7 +890,11 @@ struct SelectedRailIcon: View {
         .background(railFrameReader("icon:\(agent.id)"))
         .help(agent.name + " · " + agent.status.label)
         .onAppear {
-            withAnimation(reduceMotion ? .easeOut(duration: 0.15) : .spring(response: 0.35, dampingFraction: 0.60)) {
+            if iconAnimations {
+                withAnimation(reduceMotion ? .easeOut(duration: 0.15) : .spring(response: 0.35, dampingFraction: 0.60)) {
+                    iconScale = 1.0
+                }
+            } else {
                 iconScale = 1.0
             }
             startHalo()
@@ -831,7 +907,13 @@ struct SelectedRailIcon: View {
 
     private func startHalo() {
         guard agent.status == .running, !reduceMotion else { return }
-        withAnimation(.easeInOut(duration: 2.4).repeatForever(autoreverses: true)) {
+        // Settle into a static glow instead of breathing forever: the
+        // repeatForever version kept SwiftUI re-laying out the bar at 60 fps.
+        guard iconAnimations else {
+            halo = true
+            return
+        }
+        withAnimation(.easeInOut(duration: 1.2)) {
             halo = true
         }
     }
@@ -844,6 +926,7 @@ struct ExpandingRailPill: View {
     let live: Bool
     let reduceMotion: Bool
     @State private var expanded = false
+    @Environment(\.iconAnimations) private var iconAnimations
 
     var body: some View {
         AgentDetailPill(agent: agent, width: width, phase: phase, live: live)
@@ -852,6 +935,10 @@ struct ExpandingRailPill: View {
             .opacity(expanded ? 1 : 0)
             .background(railFrameReader("pill:\(agent.id)"))
             .onAppear {
+                guard iconAnimations else {
+                    expanded = true
+                    return
+                }
                 withAnimation(reduceMotion ? .easeOut(duration: 0.20) : .spring(response: 0.50, dampingFraction: 0.82)) {
                     expanded = true
                 }
@@ -869,6 +956,7 @@ struct SelectedAgentUnit: View {
 
     @State private var expanded = false
     @State private var iconScale: CGFloat = 0.7
+    @Environment(\.iconAnimations) private var iconAnimations
 
     var body: some View {
         HStack(spacing: 5) {
@@ -901,6 +989,11 @@ struct SelectedAgentUnit: View {
                 .opacity(expanded ? 1 : 0)
         }
         .onAppear {
+            guard iconAnimations else {
+                expanded = true
+                iconScale = 1.0
+                return
+            }
             let anim: Animation = reduceMotion
                 ? .easeOut(duration: 0.18)
                 : .spring(response: 0.42, dampingFraction: 0.76)
@@ -1104,7 +1197,8 @@ struct BarView: View {
             }
             .frame(width: available, height: geo.size.height, alignment: .leading)
             .coordinateSpace(name: "rail")
-            .animation(reduceMotion ? .easeOut(duration: 0.2) : .spring(response: 0.50, dampingFraction: 0.82), value: selected?.id)
+            // No implicit animation on selection: the 6.5 s carousel would
+            // otherwise spring the whole bar for ~0.5 s every tick.
             .onPreferenceChange(RailFramePreferenceKey.self) { frames in
                 ui.railLayout.frames = frames
                 if CommandLine.arguments.contains("--debug-layout"),

@@ -52,6 +52,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private var workspaceObserver: NSObjectProtocol?
     private var lastNotifiedWaiting: Set<String> = []
     private var lastClaudeApprovalID: String?
+    private var lastClaudeHeartbeatAt: Date?
     private var lastNotifiedFinished: Set<String> = []
     private var previousStatuses: [String: AgentStatus] = [:]
     private var liveSeenOnce = false
@@ -259,9 +260,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         let container = BarContainerView(frame: NSRect(origin: .zero, size: frame.size))
         container.onClick = { [weak self] point, clickCount in self?.handleBarClick(at: point, clickCount: clickCount) }
         container.onRightClick = { [weak self] event in self?.showBarContextMenu(event) }
-        let host = NSHostingView(rootView: BarView(
-            store: store, geom: geom, ui: ui, sys: system, net: net, updates: updates
-        ))
+        let host = NSHostingView(rootView: IconAnimationGate(ui: ui) {
+            BarView(store: store, geom: geom, ui: ui, sys: system, net: net, updates: updates)
+        })
         host.frame = container.bounds
         host.autoresizingMask = [.width, .height]
         container.addSubview(host)
@@ -293,24 +294,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         panel.animationBehavior = .none
         panel.alphaValue = 0
 
-        let host = NSHostingView(rootView: PanelView(
-            store: store,
-            ui: ui,
-            realMode: autoHideMode,
-            onSelect: { [weak self] id in
-                self?.ui.select(id)
-                dlog("[agentbar] panel: select \(id)")
-            },
-            onClose: { [weak self] in self?.setExpanded(false) },
-            onQuit: { NSApp.terminate(nil) },
-            onWeatherChanged: { [weak self] in self?.system.refreshWeather() },
-            onScreenChanged: { [weak self] in self?.applyScreenSelection() },
-            onOpenApp: { [weak self] bundle in self?.openExternalApp(bundle) },
-            onOpenAdapterLog: { [weak self] in self?.openAdapterLog() },
-            onRestartAdapters: { [weak self] in self?.restartAppAdapters() },
-            updates: updates,
-            notificationAuth: notificationAuth
-        ))
+        let host = NSHostingView(rootView: IconAnimationGate(ui: ui) {
+            PanelView(
+                store: store,
+                ui: ui,
+                realMode: autoHideMode,
+                onSelect: { [weak self] id in
+                    self?.ui.select(id)
+                    dlog("[agentbar] panel: select \(id)")
+                },
+                onClose: { [weak self] in self?.setExpanded(false) },
+                onQuit: { NSApp.terminate(nil) },
+                onWeatherChanged: { [weak self] in self?.system.refreshWeather() },
+                onScreenChanged: { [weak self] in self?.applyScreenSelection() },
+                onOpenApp: { [weak self] bundle in self?.openExternalApp(bundle) },
+                onOpenAdapterLog: { [weak self] in self?.openAdapterLog() },
+                onRestartAdapters: { [weak self] in self?.restartAppAdapters() },
+                updates: updates,
+                notificationAuth: notificationAuth
+            )
+        })
         host.frame = NSRect(origin: .zero, size: size)
         panel.contentView = host
 
@@ -373,7 +376,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     private func startAgentRotation() {
-        let timer = Timer(timeInterval: 6.5, repeats: true) { [weak self] _ in
+        let timer = Timer(timeInterval: 30.0, repeats: true) { [weak self] _ in
             self?.rotateAgent()
         }
         RunLoop.main.add(timer, forMode: .common)
@@ -391,24 +394,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         guard active.count > 1 else {
             if ui.selectedID != active[0].id {
                 ui.animationLockUntil = Date().addingTimeInterval(0.55)
-                withAnimation(.spring(response: 0.45, dampingFraction: 0.80)) {
-                    ui.selectedID = active[0].id
-                }
+                ui.selectedID = active[0].id
             }
             return
         }
         if let current = ui.selectedID, let index = active.firstIndex(where: { $0.id == current }) {
             let next = active[(index + 1) % active.count]
             ui.animationLockUntil = Date().addingTimeInterval(0.55)
-            withAnimation(.spring(response: 0.45, dampingFraction: 0.80)) {
-                ui.selectedID = next.id
-            }
+            ui.selectedID = next.id
             dlog("[agentbar] rotate: \(next.name)")
         } else {
             ui.animationLockUntil = Date().addingTimeInterval(0.55)
-            withAnimation(.spring(response: 0.45, dampingFraction: 0.80)) {
-                ui.selectedID = active[0].id
-            }
+            ui.selectedID = active[0].id
         }
     }
 
@@ -595,6 +592,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     private func touchClaudeHeartbeat(dir: URL) {
+        // The hook treats 10 s as stale; writing four times per second was
+        // unnecessary disk metadata churn. 5 s keeps a safe margin.
+        if let last = lastClaudeHeartbeatAt, Date().timeIntervalSince(last) < 4 { return }
+        lastClaudeHeartbeatAt = Date()
         let fm = FileManager.default
         try? fm.createDirectory(at: dir, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         let url = dir.appendingPathComponent("heartbeat")
@@ -626,19 +627,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         let approvalId = claudeApprovalId(approval.id)
 
         if let index = store.agents.firstIndex(where: { $0.id == "claude" }) {
-            store.agents[index].status = .waiting
-            store.agents[index].approvalId = approvalId
-            store.agents[index].approvalCommand = approval.command
-            store.agents[index].note = note
-            store.agents[index].isClaudeApproval = true
+            // Mutate only on a real change: assigning every tick published
+            // objectWillChange and re-laid out the whole bar every second.
+            let current = store.agents[index]
+            if current.status != .waiting || current.approvalId != approvalId ||
+                current.approvalCommand != approval.command || current.note != note ||
+                !current.isClaudeApproval {
+                store.agents[index].status = .waiting
+                store.agents[index].approvalId = approvalId
+                store.agents[index].approvalCommand = approval.command
+                store.agents[index].note = note
+                store.agents[index].isClaudeApproval = true
+            }
             return "claude"
         }
         if let index = store.agents.firstIndex(where: { $0.id == "claude-approval" }) {
-            store.agents[index].project = displayProject
-            store.agents[index].approvalId = approvalId
-            store.agents[index].approvalCommand = approval.command
-            store.agents[index].note = note
-            store.agents[index].isClaudeApproval = true
+            let current = store.agents[index]
+            if current.project != displayProject || current.approvalId != approvalId ||
+                current.approvalCommand != approval.command || current.note != note ||
+                !current.isClaudeApproval {
+                store.agents[index].project = displayProject
+                store.agents[index].approvalId = approvalId
+                store.agents[index].approvalCommand = approval.command
+                store.agents[index].note = note
+                store.agents[index].isClaudeApproval = true
+            }
             return "claude-approval"
         }
         store.agents.append(Agent(
@@ -1146,6 +1159,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             panel.makeKeyAndOrderFront(nil)
             panel.orderFrontRegardless()
             isExpanded = true
+            ui.animationsActive = true
             NSAnimationContext.runAnimationGroup { ctx in
                 ctx.duration = 0.22
                 ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
@@ -1155,6 +1169,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             dlog("[agentbar] expanded (unfold down)")
         } else {
             isExpanded = false
+            ui.animationsActive = ui.hoveredIndex != nil
             let collapsed = collapsedPanelFrame(from: frame)
             NSAnimationContext.runAnimationGroup({ ctx in
                 ctx.duration = 0.16
@@ -1297,6 +1312,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             }
         }
         if ui.hoveredIndex != hover { ui.hoveredIndex = hover }
+        let animationsActive = hover != nil || isExpanded
+        if ui.animationsActive != animationsActive { ui.animationsActive = animationsActive }
         if ui.hoveredOverflow != overflowHover { ui.hoveredOverflow = overflowHover }
     }
 
