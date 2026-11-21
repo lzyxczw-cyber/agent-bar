@@ -1,7 +1,7 @@
 # Agent Bar · 交接与下一步
 
-> 状态快照：**v0.3.10**，2026-11-20。当前 `main` 已从公开初始提交 `9186deb` 起步，并合并 PR #1（协议不匹配、问题答复、文档对齐）、PR #6（把 DSH bridge 打进 App，启动时同步到 Application Support）、PR #8（右上角网速改成上下两行，上面下载、下面上传）和 PR #11（`build.sh` 复制 `tools/lib/`，缺少 `Contents/Resources/tools/lib/adapter-logic.mjs` 时失败，合并 `92a603c`）。v0.3.5 加了 GitHub Release 更新检查和通知授权引导。v0.3.6 加了 Hermes 本机读取，并确认外部审批保持只读。v0.3.6 已打 tag；已经发布的 `Agent-Bar-0.3.6.dmg` 是 bundled-bridge 改动之前打的包。没有单独的 v0.3.5 tag 或安装包，更新检查和通知授权引导随 v0.3.6 发布。v0.3.7 已打 tag，官方安装包是 `Agent-Bar-0.3.7.dmg`，里面带上了 DSH bridge，只装安装包也能离开演示模式，但漏了 `tools/lib/adapter-logic.mjs`。v0.3.8 已打 tag，官方安装包是 `Agent-Bar-0.3.8.dmg`，右上角网速改成上下两行（上面下载、下面上传，来自 PR #8），并且仍然包含这份 bridge，同样漏了 `tools/lib/adapter-logic.mjs`。v0.3.9 已打 tag，官方安装包是 `Agent-Bar-0.3.9.dmg`，带上了 `tools/lib/adapter-logic.mjs`，并且仍然包含这份 bridge 和上下两行网速。v0.3.10 已打 tag，官方安装包是 `Agent-Bar-0.3.10.dmg`，加入 Claude Code Bash 审批面板。
-> bundle 版本见 `build.sh` 的 `CFBundleShortVersionString` / `CFBundleVersion`：`0.3.10`。
+> 状态快照：**v0.3.11**，2026-11-22。当前 `main` 已从公开初始提交 `9186deb` 起步，并合并 PR #1（协议不匹配、问题答复、文档对齐）、PR #6（把 DSH bridge 打进 App，启动时同步到 Application Support）、PR #8（右上角网速改成上下两行，上面下载、下面上传）和 PR #11（`build.sh` 复制 `tools/lib/`，缺少 `Contents/Resources/tools/lib/adapter-logic.mjs` 时失败，合并 `92a603c`）。v0.3.5 加了 GitHub Release 更新检查和通知授权引导。v0.3.6 加了 Hermes 本机读取，并确认外部审批保持只读。v0.3.6 已打 tag；已经发布的 `Agent-Bar-0.3.6.dmg` 是 bundled-bridge 改动之前打的包。没有单独的 v0.3.5 tag 或安装包，更新检查和通知授权引导随 v0.3.6 发布。v0.3.7 已打 tag，官方安装包是 `Agent-Bar-0.3.7.dmg`，里面带上了 DSH bridge，只装安装包也能离开演示模式，但漏了 `tools/lib/adapter-logic.mjs`。v0.3.8 已打 tag，官方安装包是 `Agent-Bar-0.3.8.dmg`，右上角网速改成上下两行（上面下载、下面上传，来自 PR #8），并且仍然包含这份 bridge，同样漏了 `tools/lib/adapter-logic.mjs`。v0.3.9 已打 tag，官方安装包是 `Agent-Bar-0.3.9.dmg`，带上了 `tools/lib/adapter-logic.mjs`，并且仍然包含这份 bridge 和上下两行网速。v0.3.10 已打 tag，官方安装包是 `Agent-Bar-0.3.10.dmg`，加入 Claude Code Bash 审批面板。v0.3.11 已打 tag，修复闲置高 CPU。
+> bundle 版本见 `build.sh` 的 `CFBundleShortVersionString` / `CFBundleVersion`：`0.3.11`。
 > 本机 `~/Documents` 的 File Provider 扩展属性会让本地 `codesign --verify` 失败（CI 不受影响）。
 > 这份文档按当前公开树校对，不沿用已删除仓库里的 v0.4.1-dev 说法。看完这一页就能接手。
 
@@ -151,10 +151,18 @@ otool -l agentbar | grep -A3 LC_BUILD_VERSION   # 期望 minos 14.0
 - **已知限制**：原生确认框与面板并存、先答者生效，原生先答时卡片最多 40 秒后消失；只镜像 `PermissionRequest` 覆盖的工具（默认仅 Bash）；App 未运行（heartbeat 超过 10 秒）时 hook 静默退出，行为与未安装一致。
 - **测试**：Node 纯函数 8 个、hook 集成 6 个、安装器 6 个；Swift 解析/选择/决定 payload 与安全校验 30 个 check。
 
+## 4h. v0.3.11 · 闲置性能（2026-11-22）
+
+- **症状**：状态条闲置时占单核 20–30%，每 6.5 秒出现约 0.6 秒的 CPU 尖峰。
+- **根因**：`repeatForever` 光晕/脉冲让整条菜单栏以 60fps 重排；像素图标的 `TimelineView` 每 0.45–0.7 秒更新一次，而每次局部更新都会重排整个全宽 SwiftUI 窗口；每 6.5 秒的轮播切换触发多个 `onAppear` 弹簧与粒子动画；另有每秒一次的冗余状态发布与 heartbeat 写入。
+- **修复**：图标动画仅在悬停状态条或面板打开时播放（闲置渲染静态首帧）；光晕、脉冲、粒子改为一次性或静态；轮播改为 30 秒一次且无动画切换；live 模式不再每秒发布 demo tick；审批行只在字段变化时写入；heartbeat 改为 5 秒一次。
+- **实测**：闲置稳态 1.2–1.8%，40 秒平均约 2%。
+
 ## 5. 最近完成（时间线）
 
 | 日期 | 内容 |
 |---|---|
+| 11-22 | **v0.3.11**：状态条闲置 CPU 从 20–30% 降到约 2%；动画只在悬停/面板打开时播放 |
 | 11-19 | **Claude 面板审批**：`PermissionRequest` hook + 本地 pending/decision 握手 + 面板长按允许/拒绝 + 审计；不依赖 bridge，App 不在时回到原生框 |
 | 11-18 | **v0.3.9**：官方 DMG 带上 `tools/lib/adapter-logic.mjs`（来自 PR #11），仍然包含 DSH bridge 和上下两行网速。已发布的 0.3.7 和 0.3.8 漏了这个文件 |
 | 11-18 | **v0.3.8**：官方 DMG 把右上角网速改成上下两行（来自 PR #8，上面下载、下面上传），仍然包含 DSH bridge。这一版和 v0.3.7 都漏了 `adapter-logic.mjs` |
